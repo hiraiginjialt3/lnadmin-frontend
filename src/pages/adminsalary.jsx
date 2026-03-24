@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import axios from "axios";
 import { weeklyPayrollAPI, attendanceSettingsAPI, employeeAPI, attendanceAPI } from "../services/api";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
@@ -251,38 +252,46 @@ const fetchActiveEmployees = async () => {
   setLoadingEmployees(true);
   setBulkValidationError("");
   try {
-    // First get basic list of active employees
-    const listResponse = await employeeAPI.getAll();
+    const response = await employeeAPI.getAll();
     
-    if (listResponse.data.success) {
-      const allEmployees = listResponse.data.employees || [];
-      const activeEmployees = allEmployees
+    if (response.data.success) {
+      const activeEmployees = response.data.employees
         .filter(emp => emp.status === 'active')
         .sort((a, b) => a.name.localeCompare(b.name));
       
       setEmployees(activeEmployees);
       
-      // Fetch all employee details in parallel (faster than sequential)
-      const detailPromises = activeEmployees.map(emp => 
-        employeeAPI.getById(emp.employee_id)
-          .then(res => ({ emp, details: res.data }))
-          .catch(err => ({ emp, error: err }))
-      );
-      
-      const results = await Promise.all(detailPromises);
-      
       const initialForm = {};
-      results.forEach(({ emp, details, error }) => {
-        let rate = settings?.default_hourly_rate || 86.87;
+      activeEmployees.forEach(emp => {
+        let rate = null;
         
-        if (!error && details && details.success && details.employee) {
-          const employeeDetails = details.employee;
-          if (employeeDetails.hourly_rate && employeeDetails.hourly_rate > 0) {
-            rate = employeeDetails.hourly_rate;
+        if (emp.hourly_rate !== undefined && emp.hourly_rate !== null) {
+          rate = typeof emp.hourly_rate === 'string' 
+            ? parseFloat(emp.hourly_rate) 
+            : emp.hourly_rate;
+        } 
+        else if (emp.hourlyRate !== undefined && emp.hourlyRate !== null) {
+          rate = typeof emp.hourlyRate === 'string' 
+            ? parseFloat(emp.hourlyRate) 
+            : emp.hourlyRate;
+        } 
+        else if (emp.rate !== undefined && emp.rate !== null) {
+          rate = typeof emp.rate === 'string' 
+            ? parseFloat(emp.rate) 
+            : emp.rate;
+        }
+        
+        if (isNaN(rate) || rate === null || rate === 0) {
+          const existingPayroll = payrolls.find(p => p.employee_id === emp.employee_id);
+          if (existingPayroll && existingPayroll.hourly_rate) {
+            rate = existingPayroll.hourly_rate;
+          } else {
+            rate = settings?.default_hourly_rate || 86.87;
           }
-        } else if (emp.hourly_rate && emp.hourly_rate > 0) {
-          // Fallback to list response rate if detail fetch failed
-          rate = emp.hourly_rate;
+        }
+        
+        if (isNaN(rate) || rate <= 0) {
+          rate = 86.87;
         }
         
         initialForm[emp.employee_id] = {
@@ -366,65 +375,75 @@ const fetchActiveEmployees = async () => {
     }
   };
 
-const applyBulkRateUpdate = async () => {
-  const selectedEmployees = Object.entries(bulkRateForm)
-    .filter(([_, data]) => data.selected)
-    .map(([empId, data]) => ({
-      employee_id: empId,
-      hourly_rate: data.hourly_rate,
-      name: employees.find(e => e.employee_id === empId)?.name || empId
-    }));
-  
-  if (selectedEmployees.length === 0) {
-    setBulkValidationError('❌ Please select at least one employee');
-    return;
-  }
-
-  if (!window.confirm(`Update hourly rates for ${selectedEmployees.length} employee(s)?\n\nThis will update the employee records and regenerate their payroll for the current week.`)) {
-    return;
-  }
-
-  try {
-    setLoadingEmployees(true);
+  const applyBulkRateUpdate = async () => {
+    const selectedEmployees = Object.entries(bulkRateForm)
+      .filter(([_, data]) => data.selected)
+      .map(([empId, data]) => ({
+        employee_id: empId,
+        hourly_rate: data.hourly_rate,
+        name: employees.find(e => e.employee_id === empId)?.name || empId
+      }));
     
-    // Update the rates
-    const response = await employeeAPI.bulkUpdateRates(selectedEmployees);
-    
-    if (response.data.success) {
-      await logActivity(
-        'Bulk Updated Hourly Rates',
-        `Updated hourly rates for ${response.data.success_count} employees`
-      );
-      
-      alert(`✅ Successfully updated rates for ${response.data.success_count} employees!`);
-      
-      // IMPORTANT: Regenerate payroll for the affected employees for the current week
-      const payrollRegeneratePromises = selectedEmployees.map(emp => 
-        weeklyPayrollAPI.autoGenerate({
-          week_start: selectedWeek.start,
-          week_end: selectedWeek.end,
-          employee_id: emp.employee_id  // You may need to modify your API to accept employee_id
-        }).catch(err => ({ error: true, emp: emp.name, err }))
-      );
-      
-      // Wait for all payroll regenerations to complete
-      await Promise.all(payrollRegeneratePromises);
-      
-      // Refresh payroll data to show updated rates
-      await fetchPayrollData();
-      
-      setIsBulkRateModalOpen(false);
-    } else {
-      setBulkValidationError(`❌ ${response.data.message || 'Failed to update rates'}`);
+    if (selectedEmployees.length === 0) {
+      setBulkValidationError('❌ Please select at least one employee');
+      return;
     }
-    
-  } catch (error) {
-    console.error('Error updating rates:', error);
-    setBulkValidationError('❌ Failed to update rates. Please try again.');
-  } finally {
-    setLoadingEmployees(false);
-  }
-};
+
+    if (!window.confirm(`Update hourly rates for ${selectedEmployees.length} employee(s)?`)) {
+      return;
+    }
+
+    try {
+      setLoadingEmployees(true);
+      
+      const response = await employeeAPI.bulkUpdateRates(selectedEmployees);
+      
+      if (response.data.success) {
+        await logActivity(
+          'Bulk Updated Hourly Rates',
+          `Updated hourly rates for ${response.data.success_count} employees${response.data.fail_count > 0 ? `, ${response.data.fail_count} failed` : ''}`
+        );
+        
+        if (response.data.fail_count === 0) {
+          alert(`✅ Successfully updated rates for ${response.data.success_count} employees!`);
+          setIsBulkRateModalOpen(false);
+          fetchPayrollData();
+        } else {
+          alert(`⚠️ Updated ${response.data.success_count} employees, failed for ${response.data.fail_count} employees.\nFailed: ${response.data.failed_employees.join(', ')}`);
+        }
+      } else {
+        setBulkValidationError(`❌ ${response.data.message || 'Failed to update rates'}`);
+      }
+      
+    } catch (error) {
+      console.error('Error updating rates:', error);
+      
+      let successCount = 0;
+      let failCount = 0;
+      const failedEmployees = [];
+      
+      for (const emp of selectedEmployees) {
+        try {
+          await employeeAPI.updateSimpleRate(emp.employee_id, emp.hourly_rate);
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to update ${emp.name}:`, err);
+          failCount++;
+          failedEmployees.push(emp.name);
+        }
+      }
+      
+      if (failCount === 0) {
+        alert(`✅ Successfully updated rates for ${successCount} employees!`);
+        setIsBulkRateModalOpen(false);
+        fetchPayrollData();
+      } else {
+        alert(`⚠️ Updated ${successCount} employees, failed for ${failCount} employees.\nFailed: ${failedEmployees.join(', ')}`);
+      }
+    } finally {
+      setLoadingEmployees(false);
+    }
+  };
 
   const getFilteredBulkEmployees = () => {
     return employees.filter(emp => {
@@ -447,6 +466,12 @@ const applyBulkRateUpdate = async () => {
 
 // UPDATED openPayslip with holiday support
 const openPayslip = async (payroll) => {
+  // Check if payroll is paid
+  if (payroll.status !== 'paid') {
+    alert('⚠️ This payroll has not been marked as paid yet. Please mark it as paid before viewing the payslip.');
+    return;
+  }
+  
   setSelectedPayslip(payroll);
   setIsPayslipModalOpen(true);
   
@@ -456,7 +481,7 @@ const openPayslip = async (payroll) => {
     // ===== GET HOLIDAYS FROM DATABASE =====
     let holidaysData = {};
     try {
-      const holidaysResponse = await attendanceAPI.getHolidays?.() || await API.get('/calendar/holidays');
+      const holidaysResponse = await API.get("/calendar/holidays");
       if (holidaysResponse.data.success) {
         holidaysData = holidaysResponse.data.holidays.reduce((acc, holiday) => {
           acc[holiday.date] = {
@@ -944,41 +969,44 @@ const openEditModal = (payroll) => {
     });
   };
 
-  const markAsPaid = async (payrollId) => {
-    if (!window.confirm('Are you sure you want to mark this payroll as paid?')) {
+const markAsPaid = async (payrollId) => {
+  if (!window.confirm('Are you sure you want to mark this payroll as paid?')) {
+    return;
+  }
+  
+  try {
+    const payrollToUpdate = payrolls.find(p => p._id === payrollId);
+    if (!payrollToUpdate) {
+      alert('Payroll record not found!');
       return;
     }
     
-    try {
-      const payrollToUpdate = payrolls.find(p => p._id === payrollId);
-      if (!payrollToUpdate) {
-        alert('Payroll record not found!');
-        return;
-      }
+    const updatedPayroll = {
+      ...payrollToUpdate,
+      status: 'paid'
+    };
+    
+    const response = await weeklyPayrollAPI.save(updatedPayroll);
+    
+    if (response.data.success) {
+      await logActivity(
+        'Marked Payroll as Paid',
+        `Marked ${payrollToUpdate.employee_name}'s payroll (${payrollToUpdate.employee_id}) as paid - Week ${payrollToUpdate.week_start}`
+      );
       
-      const updatedPayroll = {
-        ...payrollToUpdate,
-        status: 'paid'
-      };
+      alert('✅ Marked as paid!');
+      fetchPayrollData();
       
-      const response = await weeklyPayrollAPI.save(updatedPayroll);
-      
-      if (response.data.success) {
-        await logActivity(
-          'Marked Payroll as Paid',
-          `Marked ${payrollToUpdate.employee_name}'s payroll (${payrollToUpdate.employee_id}) as paid - Week ${payrollToUpdate.week_start}`
-        );
-        
-        alert('✅ Marked as paid!');
-        fetchPayrollData();
-      } else {
-        alert(`❌ Failed: ${response.data.message || 'Unknown error'}`);
-      }
-    } catch (error) {
-      console.error('Error marking as paid:', error);
-      alert('❌ Failed to update status. Please try editing the payroll manually.');
+      // REMOVED: Auto-show payslip prompt
+      // The payslip button will now appear in the actions column after refresh
+    } else {
+      alert(`❌ Failed: ${response.data.message || 'Unknown error'}`);
     }
-  };
+  } catch (error) {
+    console.error('Error marking as paid:', error);
+    alert('❌ Failed to update status. Please try editing the payroll manually.');
+  }
+};
 
   const printPayslip = () => {
     if (payslipRef.current) {
@@ -1397,7 +1425,7 @@ const openEditModal = (payroll) => {
                           >
                             <td className="ps-3 align-middle">
                               <i className={`bi bi-chevron-right transition-all ${isExpanded ? 'rotate-90' : ''}`}></i>
-                             </td>
+                            </td>
                             <td className="align-middle">
                               <div className="fw-bold">{payroll.employee_name}</div>
                               <div className="small text-muted">
@@ -1406,43 +1434,61 @@ const openEditModal = (payroll) => {
                               <div className="small text-primary">
                                 ₱{payroll.hourly_rate?.toFixed(2)}/hr
                               </div>
-                             </td>
+                            </td>
                             <td className="align-middle text-center">
                               <div className="fw-semibold">{breakdown.totalHours.toFixed(1)}h</div>
-                             </td>
+                            </td>
                             <td className="align-middle text-center">
                               <div className="fw-bold text-success">{formatCurrency(breakdown.grossPay)}</div>
                               <div className="small text-danger">-{formatCurrency(breakdown.totalDeductions)}</div>
-                             </td>
+                            </td>
                             <td className="align-middle text-center">
                               <div className="fw-bold fs-5" style={{ color: '#28a745' }}>
                                 {formatCurrency(breakdown.netPay)}
                               </div>
-                             </td>
+                            </td>
                             <td className="align-middle text-center">
                               <span className={`badge ${payroll.status === 'paid' ? 'bg-success' : 'bg-warning'}`}>
                                 {payroll.status?.toUpperCase()}
                               </span>
-                             </td>
+                            </td>
                             <td className="align-middle text-center" onClick={(e) => e.stopPropagation()}>
                               <div className="btn-group btn-group-sm">
-                                <button className="btn btn-outline-info" onClick={() => openPayslip(payroll)} title="View Payslip">
-                                  <i className="bi bi-receipt"></i>
-                                </button>
-                                <button className="btn btn-outline-warning" onClick={() => openEditModal(payroll)} title="Edit">
-                                  <i className="bi bi-pencil"></i>
-                                </button>
-                                {payroll.status === 'pending' && (
-                                  <button className="btn btn-outline-success" onClick={() => markAsPaid(payroll._id)} title="Mark as Paid">
-                                    <i className="bi bi-cash"></i>
+                                {/* Only show payslip button if status is 'paid' */}
+                                {payroll.status === 'paid' && (
+                                  <button 
+                                    className="btn btn-outline-info" 
+                                    onClick={() => openPayslip(payroll)} 
+                                    title="View Payslip"
+                                  >
+                                    <i className="bi bi-receipt"></i>
                                   </button>
                                 )}
-                                <button className="btn btn-outline-danger" onClick={() => deletePayroll(payroll._id)} title="Delete">
-                                  <i className="bi bi-trash"></i>
-                                </button>
+                                {payroll.status === 'pending' && (
+                                  <>
+                                    <button className="btn btn-outline-warning" onClick={() => openEditModal(payroll)} title="Edit">
+                                      <i className="bi bi-pencil"></i>
+                                    </button>
+                                    <button 
+                                      className="btn btn-outline-success" 
+                                      onClick={() => markAsPaid(payroll._id)} 
+                                      title="Mark as Paid"
+                                    >
+                                      <i className="bi bi-cash"></i>
+                                    </button>
+                                    <button className="btn btn-outline-danger" onClick={() => deletePayroll(payroll._id)} title="Delete">
+                                      <i className="bi bi-trash"></i>
+                                    </button>
+                                  </>
+                                )}
+                                {payroll.status === 'paid' && (
+                                  <button className="btn btn-outline-danger" onClick={() => deletePayroll(payroll._id)} title="Delete">
+                                    <i className="bi bi-trash"></i>
+                                  </button>
+                                )}
                               </div>
-                             </td>
-                           </tr>
+                            </td>
+                          </tr>
                           
                           {isExpanded && (
                             <tr className="bg-light">
@@ -1914,7 +1960,7 @@ const openEditModal = (payroll) => {
         </div>
       )}
 
-      {/* Payslip Modal - WITH SPECIAL WORKING HOLIDAY SUPPORT */}
+      {/* Payslip Modal */}
       {isPayslipModalOpen && selectedPayslip && (
         <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1050 }}>
           <div className="modal-dialog" style={{ maxWidth: '780px' }}>
@@ -1936,7 +1982,6 @@ const openEditModal = (payroll) => {
                   color: '#555',
                   lineHeight: '1.3'
                 }}>
-                  {/* ADD THIS COMPANY HEADER SECTION */}
                   <div style={{ textAlign: 'center', marginBottom: '12px', borderBottom: '1px solid #ddd', paddingBottom: '8px' }}>
                     <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#333' }}>LN DISPLAY</div>
                     <div style={{ fontSize: '9px', color: '#666', marginTop: '4px' }}>
@@ -2142,24 +2187,6 @@ const openEditModal = (payroll) => {
                   These rates affect all payroll calculations
                 </div>
                 
-                <div className="mb-3">
-                  <label className="form-label fw-bold">Default Hourly Rate (₱)</label>
-                  <div className="input-group">
-                    <span className="input-group-text">₱</span>
-                    <input
-                      type="number"
-                      className="form-control"
-                      name="default_hourly_rate"
-                      value={editingSettings.default_hourly_rate || 86.87}
-                      onChange={handleSettingsChange}
-                      min="0"
-                      step="10"
-                    />
-                  </div>
-                  <small className="text-muted">
-                    Default rate used when creating new employees or when rate is not specified
-                  </small>
-                </div>
                 
                 <div className="mb-3">
                   <label className="form-label fw-bold">Standard Work Hours Per Day</label>
@@ -2248,7 +2275,7 @@ const openEditModal = (payroll) => {
         </div>
       )}
 
-      {/* BULK RATE EDITOR MODAL */}
+      {/* BULK RATE EDITOR MODAL - FIXED VERSION */}
       {isBulkRateModalOpen && (
         <div style={overlay}>
           <div style={{ ...modal, width: '1000px' }}>
@@ -2412,7 +2439,6 @@ const openEditModal = (payroll) => {
                                     ...input, 
                                     width: '100px',
                                     borderColor: bulkRateForm[emp.employee_id]?.selected ? '#007bff' : '#ddd',
-                                    fontWeight: bulkRateForm[emp.employee_id]?.selected ? 'bold' : 'normal',
                                     backgroundColor: bulkRateForm[emp.employee_id]?.selected ? '#fff' : '#f9f9f9'
                                   }}
                                   value={bulkRateForm[emp.employee_id]?.hourly_rate || 86.87}

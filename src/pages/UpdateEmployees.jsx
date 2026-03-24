@@ -55,6 +55,9 @@ const UpdateEmployees = () => {
     confirmPassword: ""
   });
 
+  // Password update loading state
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+
   // Departments state - FIXED: Load from MongoDB
   const [departments, setDepartments] = useState([]);
 
@@ -405,6 +408,41 @@ const UpdateEmployees = () => {
     }
   };
 
+  // ========== HANDLE PASSWORD ONLY UPDATE ==========
+  const handlePasswordOnlyUpdate = async () => {
+    if (!validatePassword()) return;
+    
+    if (!passwordData.newPassword) {
+      setError("Please enter a new password");
+      return;
+    }
+    
+    setUpdatingPassword(true);
+    setError("");
+    setSuccess("");
+    
+    try {
+      const response = await API.put(`/employees/${employeeId}/password`, { 
+        password: passwordData.newPassword 
+      });
+      
+      if (response.data.success) {
+        setSuccess("✅ Password updated successfully!");
+        // Clear password fields
+        setPasswordData({ newPassword: "", confirmPassword: "" });
+        // Clear password errors
+        setPasswordErrors({ newPassword: "", confirmPassword: "" });
+      } else {
+        setError(response.data.message || "Failed to update password");
+      }
+    } catch (err) {
+      console.error("Password update error:", err);
+      setError(err.response?.data?.message || "Error updating password");
+    } finally {
+      setUpdatingPassword(false);
+    }
+  };
+
   // ========== HANDLE FACE UPDATE ==========
   const handleUpdateFace = async () => {
     if (!faceImage) {
@@ -609,9 +647,6 @@ const UpdateEmployees = () => {
                         </span>
                       )}
                     </div>
-                    <small className="text-muted">
-                      Face images are stored as base64 strings directly in MongoDB (no files on disk)
-                    </small>
                   </div>
 
                   {/* Face Image Update Section */}
@@ -830,26 +865,7 @@ const UpdateEmployees = () => {
                 </div>
 
                 <div className="col-md-6">
-                  {/* Info Panel */}
-                  <div className="alert alert-info">
-                    <h6 className="mb-2">
-                      <i className="bi bi-info-circle me-2"></i>
-                      About Base64 Storage
-                    </h6>
-                    <ul className="mb-0 small">
-                      <li><strong>Storage:</strong> Images stored as base64 strings in MongoDB</li>
-                      <li><strong>Persistence:</strong> Survives server restarts and folder deletions</li>
-                      <li><strong>No files:</strong> No physical files saved to uploads folder</li>
-                      <li><strong>Backup:</strong> Images are backed up with your database</li>
-                    </ul>
-                  </div>
-
-                  {employee.has_face_data && (
-                    <div className="alert alert-success">
-                      <i className="bi bi-check-circle me-2"></i>
-                      <strong>Face data exists:</strong> Update will replace existing base64 image
-                    </div>
-                  )}
+                  
                 </div>
               </div>
             </div>
@@ -1118,6 +1134,34 @@ const UpdateEmployees = () => {
                             )}
                           </div>
                         </div>
+                        
+                        {/* ADDED: Separate Password Update Button */}
+                        <div className="row mt-3">
+                          <div className="col-12">
+                            <button
+                              type="button"
+                              className="btn btn-warning w-100"
+                              onClick={handlePasswordOnlyUpdate}
+                              disabled={updatingPassword || !passwordData.newPassword || saving || extractingFace}
+                            >
+                              {updatingPassword ? (
+                                <>
+                                  <span className="spinner-border spinner-border-sm me-2"></span>
+                                  Updating Password...
+                                </>
+                              ) : (
+                                <>
+                                  <i className="bi bi-key me-2"></i>
+                                  Update Password Only
+                                </>
+                              )}
+                            </button>
+                            <small className="text-muted d-block mt-2 text-center">
+                              <i className="bi bi-info-circle me-1"></i>
+                              This will update the password without changing other employee information
+                            </small>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1129,7 +1173,7 @@ const UpdateEmployees = () => {
                     type="button"
                     className="btn btn-secondary"
                     onClick={handleCancel}
-                    disabled={saving || extractingFace}
+                    disabled={saving || extractingFace || updatingPassword}
                   >
                     <i className="bi bi-x-circle me-1"></i>
                     Cancel
@@ -1138,7 +1182,7 @@ const UpdateEmployees = () => {
                   <button
                     type="submit"
                     className="btn btn-primary"
-                    disabled={saving || extractingFace}
+                    disabled={saving || extractingFace || updatingPassword}
                   >
                     {saving ? (
                       <>
@@ -1148,7 +1192,7 @@ const UpdateEmployees = () => {
                     ) : (
                       <>
                         <i className="bi bi-save me-1"></i>
-                        Save Changes
+                        Save All Changes
                       </>
                     )}
                   </button>

@@ -18,7 +18,17 @@ const AccountManagement = () => {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
   const [extractingFeatures, setExtractingFeatures] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [systemHealth, setSystemHealth] = useState({});
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [archivePassword, setArchivePassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  
+  // Modal password visibility states
+  const [showModalPassword, setShowModalPassword] = useState(false);
+  const [showModalConfirmPassword, setShowModalConfirmPassword] = useState(false);
+  
   const [newEmployee, setNewEmployee] = useState({
     name: "",
     email: "",
@@ -39,7 +49,7 @@ const AccountManagement = () => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   
-  // Password visibility state
+  // Password visibility state for employee creation
   const [showPassword, setShowPassword] = useState(false);
   
   // Add state for generated ID preview
@@ -47,16 +57,20 @@ const AccountManagement = () => {
   
   // State for departments from MongoDB
   const [departments, setDepartments] = useState([]);
+  
+  // Helper function to show alerts
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   // Define available roles based on current user's role
   const getAvailableRoles = () => {
     const userRole = user?.role || 'Admin';
     
     const rolePermissions = {
-      Admin: ['Admin', 'HR', 'Accountant', 'Employee'],  // Admin can create all roles
-      HR: ['HR', 'Accountant', 'Employee'],             // HR cannot create Admin
-      Accountant: ['Accountant', 'Employee'],           // Accountant cannot create Admin or HR
-      Employee: []                                       // Employee cannot create anyone
+      Admin: ['Admin', 'HR', 'Accountant', 'Employee'],
+      HR: ['HR', 'Accountant', 'Employee'],
+      Accountant: ['Accountant', 'Employee'],
+      Employee: []
     };
     
     return rolePermissions[userRole] || [];
@@ -126,24 +140,18 @@ const AccountManagement = () => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       
-      // Set canvas dimensions to match video
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       
-      // Draw video frame to canvas
       const context = canvas.getContext('2d');
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
       
-      // Convert canvas to file
       canvas.toBlob((blob) => {
-        // Create file from blob
         const file = new File([blob], "camera_capture.jpg", { type: "image/jpeg" });
         
-        // Set as face image
         setFacePreview(URL.createObjectURL(blob));
         setNewEmployee({...newEmployee, face_image: file});
         
-        // Stop camera and close modal
         stopCamera();
         setCapturing(false);
       }, 'image/jpeg', 0.95);
@@ -164,18 +172,15 @@ const AccountManagement = () => {
       const response = await API.get('/employees');
       const data = response.data;
       if (data.success) {
-        // Fetch face data status and full employee data for each employee
         const employeesWithFullData = await Promise.all(
           data.employees.map(async (emp) => {
             try {
-              // Fetch face info
               const faceResponse = await API.get(`/employee/${emp.employee_id}/face-info`);
               let hasFaceData = false;
               if (faceResponse.data) {
                 hasFaceData = faceResponse.data.has_face_data;
               }
               
-              // Fetch full employee data to get profile_image_base64
               try {
                 const empResponse = await API.get(`/employee/${emp.employee_id}`);
                 if (empResponse.data.success) {
@@ -276,6 +281,145 @@ const AccountManagement = () => {
     }
   }, []);
 
+  // Queue employee for archive when deactivated
+  const queueEmployeeForArchive = useCallback(async (employeeId, employeeName) => {
+    try {
+      await API.post('/archive/queue-employee', { 
+        employee_id: employeeId, 
+        employee_name: employeeName 
+      });
+      console.log(`[QUEUE] ${employeeName} queued for archive`);
+    } catch (error) {
+      console.error("Queue error:", error);
+    }
+  }, []);
+
+  // Open password modal - reset fields
+  const openPasswordModal = () => {
+    setArchivePassword("");
+    setConfirmPassword("");
+    setPasswordError("");
+    setShowModalPassword(false);
+    setShowModalConfirmPassword(false);
+    setShowPasswordModal(true);
+  };
+
+  // Close password modal
+  const closePasswordModal = () => {
+    setShowPasswordModal(false);
+    setArchivePassword("");
+    setConfirmPassword("");
+    setPasswordError("");
+    setShowModalPassword(false);
+    setShowModalConfirmPassword(false);
+  };
+
+  // Toggle modal password visibility
+  const toggleModalPasswordVisibility = () => {
+    setShowModalPassword(!showModalPassword);
+  };
+
+  // Toggle modal confirm password visibility
+  const toggleModalConfirmPasswordVisibility = () => {
+    setShowModalConfirmPassword(!showModalConfirmPassword);
+  };
+
+  // Archive all inactive employees with password
+  const handleArchiveInactive = useCallback(async () => {
+    // Validate password
+    if (archivePassword.length < 6) {
+      setPasswordError("Password must be at least 6 characters long");
+      return;
+    }
+    
+    if (archivePassword !== confirmPassword) {
+      setPasswordError("Passwords do not match");
+      return;
+    }
+    
+    setShowPasswordModal(false);
+    
+    if (!window.confirm(`⚠️ ARCHIVE ALL INACTIVE EMPLOYEES\n\nThis will:\n• Archive all inactive employees to a password-protected ZIP file\n• Remove their data from all databases\n• Download the archive file to your computer\n\nAre you sure you want to continue?`)) {
+      return;
+    }
+    
+    setArchiving(true);
+    setError("");
+    setSuccess("");
+    
+    try {
+      // Make the request with responseType: 'blob' to handle file download
+      const response = await API.post('/archive/inactive-employees', 
+        { password: archivePassword },
+        { responseType: 'blob' }
+      );
+      
+      // Create a blob from the response
+      const blob = new Blob([response.data], { 
+        type: 'application/zip' 
+      });
+      
+      // Create a download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Get filename from Content-Disposition header or use default
+      let filename = 'employee_archive.zip';
+      const contentDisposition = response.headers['content-disposition'];
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1].replace(/['"]/g, '');
+        }
+      }
+      
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      // Show success message
+      showAlert("success", `
+        <div class="text-start">
+          <h6 class="mb-3">✅ Archive Complete!</h6>
+          <p><strong>File downloaded:</strong> ${filename}</p>
+          <p><strong>Password:</strong> <code>${archivePassword}</code></p>
+          <p class="mb-0 text-success">The ZIP file has been saved to your Downloads folder.</p>
+          <hr class="my-2">
+          <p class="small text-muted mb-0">
+            <i class="bi bi-info-circle me-1"></i>
+            The archived employees have been removed from the system. They can only be restored from this file.
+          </p>
+        </div>
+      `, true);
+      
+      // Refresh the employee list
+      fetchEmployees();
+      
+    } catch (error) {
+      console.error("Archive error:", error);
+      
+      // Try to parse error response if it's JSON
+      if (error.response && error.response.data instanceof Blob) {
+        const text = await error.response.data.text();
+        try {
+          const errorData = JSON.parse(text);
+          setError(errorData.message || "Error archiving employees");
+        } catch {
+          setError("Error archiving employees");
+        }
+      } else {
+        setError(error.response?.data?.message || "Error archiving employees");
+      }
+    } finally {
+      setArchiving(false);
+      setArchivePassword("");
+      setConfirmPassword("");
+    }
+  }, [archivePassword, confirmPassword, fetchEmployees]);
+
   useEffect(() => {
     const initialize = async () => {
       const healthData = await checkSystemHealth();
@@ -342,7 +486,7 @@ const AccountManagement = () => {
     if (file) {
       setFacePreview(URL.createObjectURL(file));
       setNewEmployee({...newEmployee, face_image: file});
-      setShowCamera(false); // Close camera if open
+      setShowCamera(false);
     }
   };
 
@@ -358,7 +502,6 @@ const AccountManagement = () => {
 
   const handleRoleChange = (e) => {
     const selectedRole = e.target.value;
-    // Check if user can create this role
     if (!canCreateRole(selectedRole)) {
       showAlert("warning", `You don't have permission to create ${selectedRole} accounts.`, true);
       return;
@@ -369,7 +512,6 @@ const AccountManagement = () => {
   const handleCreateEmployee = async () => {
     scrollToTop();
     
-    // Check if user can create the selected role
     if (!canCreateRole(newEmployee.role)) {
       showAlert("danger", `You don't have permission to create ${newEmployee.role} accounts.`, true);
       return;
@@ -424,11 +566,6 @@ const AccountManagement = () => {
       if (newEmployee.face_image) {
         formData.append('face_image', newEmployee.face_image);
       }
-
-      console.log("Creating employee with department:", newEmployee.department);
-      console.log("Role:", newEmployee.role);
-      console.log("Profile picture:", newEmployee.profile_picture ? "Yes" : "No");
-      console.log("Face image:", newEmployee.face_image ? "Yes" : "No");
 
       const createResponse = await API.post('/employee/register', formData, {
         headers: {
@@ -489,7 +626,6 @@ const AccountManagement = () => {
           <hr>
           <h6>📊 Face Recognition Results:</h6>
           <ul class="mb-0">
-            ${createData.has_face_data ? '<li>✅ 128D facial features extracted</li>' : '<li>⚠️ Face features could not be extracted</li>'}
             <li>✅ Saved to features_all.csv</li>
             <li>✅ Face image stored as base64 in MongoDB</li>
             ${createData.profile_base64_length ? '<li>✅ Profile picture stored as base64 in MongoDB</li>' : ''}
@@ -520,6 +656,11 @@ const AccountManagement = () => {
         
         if (data.success) {
           const employee = employees.find(emp => emp.employee_id === employeeId);
+          
+          if (newStatus === "inactive") {
+            await queueEmployeeForArchive(employeeId, employee?.name || 'Unknown');
+            showAlert("info", `⚠️ ${employee?.name} has been queued for archiving. They will be archived when you click "Archive All Inactive".`);
+          }
           
           await logActivity(
             `${newStatus === 'active' ? 'Activated' : 'Deactivated'} Employee Account`,
@@ -613,30 +754,6 @@ const AccountManagement = () => {
     }
   };
 
-  const batchProcessFaces = async () => {
-    if (window.confirm("This will process ALL face images in the data_faces_from_camera folder. Continue?")) {
-      try {
-        setExtractingFeatures(true);
-        showAlert("info", "Starting batch processing of all face images...");
-
-        const response = await processAllFaces();
-        const data = response.data;
-        setExtractingFeatures(false);
-
-        if (data.success) {
-          showAlert("success", data.message);
-          fetchEmployees();
-        } else {
-          showAlert("warning", data.message);
-        }
-      } catch (error) {
-        console.error("Error:", error);
-        setExtractingFeatures(false);
-        showAlert("danger", "Error processing faces.");
-      }
-    }
-  };
-
   const showAlert = (type, message, isHtml = false, scroll = false) => {
     const alertContainer = document.getElementById('alert-container');
     if (!alertContainer) return;
@@ -670,19 +787,127 @@ const AccountManagement = () => {
 
   return (
     <div className="container py-4">
+      {/* Password Modal - Fixed with proper focus management and show/hide password */}
+      {showPasswordModal && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">
+                  <i className="bi bi-lock me-2"></i>
+                  Set Archive Password
+                </h5>
+                <button type="button" className="btn-close" onClick={closePasswordModal}></button>
+              </div>
+              <div className="modal-body">
+                <p className="text-muted mb-3">
+                  Set a password to protect the archive ZIP file. This password will be required to extract the archive.
+                </p>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Password</label>
+                  <div className="input-group">
+                    <input
+                      type={showModalPassword ? "text" : "password"}
+                      className="form-control"
+                      value={archivePassword}
+                      onChange={(e) => setArchivePassword(e.target.value)}
+                      placeholder="Enter password (min. 6 characters)"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      onClick={toggleModalPasswordVisibility}
+                    >
+                      <i className={`bi ${showModalPassword ? 'bi-eye-slash' : 'bi-eye'}`}></i>
+                    </button>
+                  </div>
+                  <small className="text-muted">Minimum 6 characters</small>
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-bold">Confirm Password</label>
+                  <div className="input-group">
+                    <input
+                      type={showModalConfirmPassword ? "text" : "password"}
+                      className="form-control"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Confirm password"
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      onClick={toggleModalConfirmPasswordVisibility}
+                    >
+                      <i className={`bi ${showModalConfirmPassword ? 'bi-eye-slash' : 'bi-eye'}`}></i>
+                    </button>
+                  </div>
+                </div>
+                {passwordError && (
+                  <div className="alert alert-danger py-2 mb-0">
+                    <i className="bi bi-exclamation-triangle me-2"></i>
+                    {passwordError}
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={closePasswordModal}>
+                  Cancel
+                </button>
+                <button 
+                  type="button" 
+                  className="btn btn-primary" 
+                  onClick={handleArchiveInactive}
+                  disabled={archiving}
+                >
+                  {archiving ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-1"></span>
+                      Archiving...
+                    </>
+                  ) : (
+                    <>
+                      <i className="bi bi-archive me-1"></i>
+                      Start Archive
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Alert Container */}
       <div id="alert-container"></div>
 
       {/* Header */}
       <div className="mb-4">
-        <div className="d-flex justify-content-between align-items-center">
+        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
           <div>
             <h4 className="fw-bold mb-1">Account Management</h4>
             <small className="text-muted">
-              Face Recognition Employee Registration | Logged in as: <strong>{user?.role || 'Admin'}</strong>
+              Face Recognition Employee Registration
             </small>
           </div>
-          <div className="d-flex gap-2">
+          <div className="d-flex gap-2 flex-wrap">
+            <button 
+              className="btn btn-danger btn-sm" 
+              onClick={openPasswordModal}
+              disabled={archiving || extractingFeatures || employees.filter(e => e.status === 'inactive').length === 0}
+            >
+              {archiving ? (
+                <>
+                  <span className="spinner-border spinner-border-sm me-1"></span>
+                  Archiving...
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-archive me-1"></i>
+                  Archive All Inactive
+                </>
+              )}
+            </button>
             <button 
               className="btn btn-outline-info btn-sm" 
               onClick={checkSystemHealth}
@@ -698,14 +923,6 @@ const AccountManagement = () => {
             >
               <i className="bi bi-arrow-left-right me-1"></i>
               Sync Databases
-            </button>
-            <button 
-              className="btn btn-outline-warning btn-sm" 
-              onClick={batchProcessFaces}
-              disabled={extractingFeatures}
-            >
-              <i className="bi bi-arrow-repeat me-1"></i>
-              Batch Process Faces
             </button>
           </div>
         </div>
@@ -736,9 +953,44 @@ const AccountManagement = () => {
               </small>
               <strong>{employees.filter(e => e.has_face_data).length} / {employees.length}</strong>
             </div>
+            <div className="col-md-3">
+              <small className="d-block text-muted">
+                <i className="bi bi-archive me-1 text-warning"></i>
+                Inactive Employees
+              </small>
+              <strong className="text-warning">{employees.filter(e => e.status === 'inactive').length} queued for archive</strong>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Archive Queue Info Card */}
+      {employees.filter(e => e.status === 'inactive').length > 0 && (
+        <div className="card bg-warning bg-opacity-10 mb-4">
+          <div className="card-body py-3">
+            <div className="row align-items-center">
+              <div className="col-md-8">
+                <small className="d-block text-warning">
+                  <i className="bi bi-archive me-1"></i>
+                  Archive Queue
+                </small>
+                <strong>
+                  {employees.filter(e => e.status === 'inactive').length} inactive employee(s) ready for archive
+                </strong>
+                <p className="small text-muted mb-0 mt-1">
+                  Click "Archive All Inactive" to set a password and permanently archive these employees.
+                </p>
+              </div>
+              <div className="col-md-4 text-end">
+                <span className="badge bg-warning text-dark">
+                  <i className="bi bi-archive me-1"></i>
+                  {employees.filter(e => e.status === 'inactive').length} Pending Archive
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Buttons */}
       <div className="d-flex gap-2 mb-4 flex-wrap">
@@ -852,9 +1104,17 @@ const AccountManagement = () => {
                           <span className="badge bg-info">{emp.role}</span>
                         </td>
                         <td>
-                          <span className={`badge ${emp.status === "active" ? "bg-success" : "bg-danger"}`}>
-                            {emp.status.toUpperCase()}
-                          </span>
+                          {emp.status === "active" ? (
+                            <span className="badge bg-success">ACTIVE</span>
+                          ) : (
+                            <div>
+                              <span className="badge bg-danger mb-1">INACTIVE</span>
+                              <small className="text-muted d-block">
+                                <i className="bi bi-archive me-1"></i>
+                                Queued for archive
+                              </small>
+                            </div>
+                          )}
                         </td>
                         <td>
                           {emp.has_face_data ? (
@@ -875,7 +1135,7 @@ const AccountManagement = () => {
                           <button 
                             className={`btn btn-sm ${emp.status === "active" ? "btn-danger" : "btn-success"}`}
                             onClick={() => handleUpdateEmployeeStatus(emp.employee_id, emp.status)}
-                            disabled={extractingFeatures}
+                            disabled={extractingFeatures || archiving}
                           >
                             {emp.status === "active" ? "Deactivate" : "Activate"}
                           </button>

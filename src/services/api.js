@@ -88,6 +88,7 @@ export const extractFaceFeatures = (employeeId, name, faceImage) => {
     });
 };
 
+
 export const processAllFaces = () => API.post('/process-all-faces');
 
 export const syncAttendanceDB = () => 
@@ -390,5 +391,8 @@ export const benefitsAPI = {
     getWeekly: getWeeklyBenefits,
     getForPayroll: getBenefitsForPayroll
 };
+
+export const updateEmployeePassword = (employeeId, password) => 
+    API.put(`/employees/${employeeId}/password`, { password });
 
 export default API;
