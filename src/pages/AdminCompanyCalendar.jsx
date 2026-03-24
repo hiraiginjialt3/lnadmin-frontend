@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import axios from "axios";
+import API from "../services/api";
 
 const CompanyCalendar = () => {
   const [events, setEvents] = useState([]);
@@ -51,7 +51,7 @@ const CompanyCalendar = () => {
   // Fetch holidays from MongoDB
   const fetchHolidays = async () => {
     try {
-      const response = await axios.get("http://localhost:5000/api/calendar/holidays");
+      const response = await API.get("/calendar/holidays");
       if (response.data.success) {
         setHolidays(response.data.holidays);
         
@@ -78,7 +78,7 @@ const CompanyCalendar = () => {
   // Fetch company events from MongoDB
   const fetchCompanyEvents = async () => {
     try {
-      const response = await axios.get("http://localhost:5000/api/calendar/events");
+      const response = await API.get("/calendar/events");
       if (response.data.success) {
         setCompanyEvents(response.data.events);
         
@@ -105,7 +105,7 @@ const CompanyCalendar = () => {
   // Fetch settings from MongoDB
   const fetchSettings = async () => {
     try {
-      const response = await axios.get("http://localhost:5000/api/attendance/settings");
+      const response = await API.get("/attendance/settings");
       if (response.data.success) {
         setSettings(response.data.settings);
       }
@@ -118,10 +118,7 @@ const CompanyCalendar = () => {
   const saveSettings = async () => {
     setLoading(true);
     try {
-      const response = await axios.post(
-        "http://localhost:5000/api/attendance/settings",
-        settings
-      );
+      const response = await API.post("/attendance/settings", settings);
       if (response.data.success) {
         setMessage({ type: "success", text: "Settings saved successfully!" });
         setTimeout(() => setMessage({ type: "", text: "" }), 3000);
@@ -142,7 +139,7 @@ const CompanyCalendar = () => {
 
     setLoading(true);
     try {
-      const response = await axios.post("http://localhost:5000/api/calendar/holidays", newHoliday);
+      const response = await API.post("/calendar/holidays", newHoliday);
       if (response.data.success) {
         await fetchHolidays(); // Refresh holidays
         setNewHoliday({ name: "", date: "", type: "regular", description: "" });
@@ -166,7 +163,7 @@ const CompanyCalendar = () => {
 
     setLoading(true);
     try {
-      const response = await axios.post("http://localhost:5000/api/calendar/events", newEvent);
+      const response = await API.post("/calendar/events", newEvent);
       if (response.data.success) {
         await fetchCompanyEvents(); // Refresh events
         setNewEvent({ title: "", date: "", type: "company-event", description: "" });
@@ -185,7 +182,7 @@ const CompanyCalendar = () => {
   const deleteHoliday = async (holidayId) => {
     if (!window.confirm("Delete this holiday?")) return;
     try {
-      await axios.delete(`http://localhost:5000/api/calendar/holidays/${holidayId}`);
+      await API.delete(`/calendar/holidays/${holidayId}`);
       await fetchHolidays(); // Refresh
       setMessage({ type: "success", text: "Holiday deleted!" });
       setTimeout(() => setMessage({ type: "", text: "" }), 3000);
@@ -198,7 +195,7 @@ const CompanyCalendar = () => {
   const deleteEvent = async (eventId) => {
     if (!window.confirm("Delete this event?")) return;
     try {
-      await axios.delete(`http://localhost:5000/api/calendar/events/${eventId}`);
+      await API.delete(`/calendar/events/${eventId}`);
       await fetchCompanyEvents(); // Refresh
       setMessage({ type: "success", text: "Event deleted!" });
       setTimeout(() => setMessage({ type: "", text: "" }), 3000);

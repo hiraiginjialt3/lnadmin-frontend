@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
-
-const API_BASE_URL = 'http://localhost:5000';
+import API from "../services/api";
 
 const AdminLeaveManagement = () => {
   const [activeTab, setActiveTab] = useState('employees');
@@ -50,7 +48,7 @@ const AdminLeaveManagement = () => {
     setError(null);
     try {
       console.log("Fetching from /api/employee-credentials");
-      const response = await axios.get(`${API_BASE_URL}/api/employee-credentials`);
+      const response = await API.get("/employee-credentials");
       console.log("Employees response:", response.data);
       
       if (response.data.success) {
@@ -60,7 +58,7 @@ const AdminLeaveManagement = () => {
         const employeesWithBalances = await Promise.all(
           employeesList.map(async (emp) => {
             try {
-              const balanceResponse = await axios.get(`${API_BASE_URL}/api/leave/balance/${emp.employee_id}`);
+              const balanceResponse = await API.get(`/leave/balance/${emp.employee_id}`);
               if (balanceResponse.data.success) {
                 return {
                   ...emp,
@@ -97,14 +95,14 @@ const AdminLeaveManagement = () => {
     setLoading(true);
     setError(null);
     try {
-      let url = `${API_BASE_URL}/api/leave/requests`;
+      let url = `/leave/requests`;
       
       if (filter !== 'all') {
         url += `?status=${filter}`;
       }
       
       console.log("Fetching leave requests from:", url);
-      const response = await axios.get(url);
+      const response = await API.get(url);
       console.log("Leave requests response:", response.data);
       
       if (response.data.success) {
@@ -122,9 +120,9 @@ const AdminLeaveManagement = () => {
 
   const fetchStats = async () => {
     try {
-      const url = `${API_BASE_URL}/api/leave/stats`;
+      const url = `/leave/stats`;
       console.log("Fetching stats from:", url);
-      const response = await axios.get(url);
+      const response = await API.get(url);
       console.log("Stats response:", response.data);
       
       if (response.data.success) {
@@ -150,7 +148,7 @@ const AdminLeaveManagement = () => {
       // Update Personal Leave
       if (editBalanceModal.new_personal !== editBalanceModal.personal_leave) {
         try {
-          const response = await axios.post(`${API_BASE_URL}/api/leave/admin/edit-balance`, {
+          const response = await API.post("/leave/admin/edit-balance", {
             employee_id: editBalanceModal.employee_id,
             leave_type: 'personal',
             new_balance: editBalanceModal.new_personal,
@@ -170,7 +168,7 @@ const AdminLeaveManagement = () => {
       // Update Sick Leave
       if (editBalanceModal.new_sick !== editBalanceModal.sick_leave) {
         try {
-          const response = await axios.post(`${API_BASE_URL}/api/leave/admin/edit-balance`, {
+          const response = await API.post("/leave/admin/edit-balance", {
             employee_id: editBalanceModal.employee_id,
             leave_type: 'sick',
             new_balance: editBalanceModal.new_sick,
@@ -190,7 +188,7 @@ const AdminLeaveManagement = () => {
       // Update Emergency Leave
       if (editBalanceModal.new_emergency !== editBalanceModal.emergency_leave) {
         try {
-          const response = await axios.post(`${API_BASE_URL}/api/leave/admin/edit-balance`, {
+          const response = await API.post("/leave/admin/edit-balance", {
             employee_id: editBalanceModal.employee_id,
             leave_type: 'emergency',
             new_balance: editBalanceModal.new_emergency,
@@ -230,10 +228,10 @@ const AdminLeaveManagement = () => {
     setProcessing(true);
     setError(null);
     try {
-      const url = `${API_BASE_URL}/api/leave/approve/${requestId}`;
+      const url = `/leave/approve/${requestId}`;
       console.log(`Approving request ${requestId}`);
       
-      const response = await axios.post(url, {
+      const response = await API.post(url, {
         admin_notes: adminNotes
       });
 
@@ -259,10 +257,10 @@ const AdminLeaveManagement = () => {
     setProcessing(true);
     setError(null);
     try {
-      const url = `${API_BASE_URL}/api/leave/deny/${requestId}`;
+      const url = `/leave/deny/${requestId}`;
       console.log(`Denying request ${requestId}`);
       
-      const response = await axios.post(url, {
+      const response = await API.post(url, {
         admin_notes: adminNotes
       });
 
@@ -369,7 +367,7 @@ const AdminLeaveManagement = () => {
       {/* Connection Status */}
       <div className="alert alert-info mb-4">
         <i className="bi bi-info-circle-fill me-2"></i>
-        Connected to server at {API_BASE_URL}
+        Connected to server: {API.defaults.baseURL}
         {activeTab === 'requests' && stats.total > 0 && (
           <> | 
             <strong className="ms-2">Pending: {stats.pending}</strong> | 
@@ -783,7 +781,7 @@ const AdminLeaveManagement = () => {
                                     className="btn btn-sm btn-outline-primary mt-1"
                                     onClick={async () => {
                                       try {
-                                        const balanceResponse = await axios.get(`${API_BASE_URL}/api/leave/balance/${request.employee_id}`);
+                                        const balanceResponse = await API.get(`/leave/balance/${request.employee_id}`);
                                         if (balanceResponse.data.success) {
                                           setEditBalanceModal({
                                             show: true,

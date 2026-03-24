@@ -1,11 +1,9 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
 
-// Base URLs - Now using environment-based configuration
 const FLASK_BASE = API_BASE_URL.replace('/api', '');
 const API_BASE = API_BASE_URL;
 
-// Create axios instances
 const FlaskAPI = axios.create({
     baseURL: FLASK_BASE,
     headers: {
@@ -20,13 +18,11 @@ const API = axios.create({
     },
 });
 
-// Add request interceptor for debugging
 API.interceptors.request.use(request => {
     console.log('API Request:', request.method.toUpperCase(), request.url);
     return request;
 });
 
-// Add response interceptor for error handling
 API.interceptors.response.use(
     response => response,
     error => {

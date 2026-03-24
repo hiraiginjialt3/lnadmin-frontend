@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import axios from "axios";
 import { useAuth } from '../context/AuthContext';
+import API from "../services/api";
 
 const UpdateEmployees = () => {
   const { employeeId } = useParams();
@@ -214,8 +214,8 @@ const UpdateEmployees = () => {
   // ========== FETCH DEPARTMENTS FROM MONGODB ==========
   const fetchDepartments = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/departments');
-      const data = await response.json();
+      const response = await API.get('/departments');
+      const data = response.data;
       
       if (data.success) {
         console.log("Fetched departments:", data.data);
@@ -254,7 +254,7 @@ const UpdateEmployees = () => {
   const fetchEmployee = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`http://localhost:5000/api/employee/${employeeId}`);
+      const response = await API.get(`/employee/${employeeId}`);
       
       if (response.data.success) {
         const emp = response.data.employee;
@@ -425,15 +425,9 @@ const UpdateEmployees = () => {
       formData.append('face_image', faceImage);
       formData.append('name', employee.name);
 
-      const response = await axios.post(
-        `http://localhost:5000/api/employee/${employeeId}/update-face`,
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          }
-        }
-      );
+      const response = await API.post(`/employee/${employeeId}/update-face`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
 
       if (response.data.success) {
         const reader = new FileReader();
@@ -499,15 +493,9 @@ const UpdateEmployees = () => {
         formData.append('password', passwordData.newPassword);
       }
 
-      const response = await axios.put(
-        `http://localhost:5000/api/employees/${employeeId}`, 
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          }
-        }
-      );
+      const response = await API.put(`/employees/${employeeId}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
 
       if (response.data.success) {
         let message = "Employee information updated successfully!";

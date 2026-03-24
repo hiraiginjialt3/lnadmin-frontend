@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import axios from "axios";  // ← ADD THIS IMPORT
 import { weeklyPayrollAPI, attendanceSettingsAPI, employeeAPI, attendanceAPI } from "../services/api";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
 import { logActivity } from '../utils/activityLogger';
+import API from "../services/api";
 
 const Adminsalary = () => {
   const [payrolls, setPayrolls] = useState([]);
@@ -251,46 +251,38 @@ const fetchActiveEmployees = async () => {
   setLoadingEmployees(true);
   setBulkValidationError("");
   try {
-    const response = await employeeAPI.getAll();
+    // First get basic list of active employees
+    const listResponse = await employeeAPI.getAll();
     
-    if (response.data.success) {
-      const activeEmployees = response.data.employees
+    if (listResponse.data.success) {
+      const allEmployees = listResponse.data.employees || [];
+      const activeEmployees = allEmployees
         .filter(emp => emp.status === 'active')
         .sort((a, b) => a.name.localeCompare(b.name));
       
       setEmployees(activeEmployees);
       
+      // Fetch all employee details in parallel (faster than sequential)
+      const detailPromises = activeEmployees.map(emp => 
+        employeeAPI.getById(emp.employee_id)
+          .then(res => ({ emp, details: res.data }))
+          .catch(err => ({ emp, error: err }))
+      );
+      
+      const results = await Promise.all(detailPromises);
+      
       const initialForm = {};
-      activeEmployees.forEach(emp => {
-        let rate = null;
+      results.forEach(({ emp, details, error }) => {
+        let rate = settings?.default_hourly_rate || 86.87;
         
-        if (emp.hourly_rate !== undefined && emp.hourly_rate !== null) {
-          rate = typeof emp.hourly_rate === 'string' 
-            ? parseFloat(emp.hourly_rate) 
-            : emp.hourly_rate;
-        } 
-        else if (emp.hourlyRate !== undefined && emp.hourlyRate !== null) {
-          rate = typeof emp.hourlyRate === 'string' 
-            ? parseFloat(emp.hourlyRate) 
-            : emp.hourlyRate;
-        } 
-        else if (emp.rate !== undefined && emp.rate !== null) {
-          rate = typeof emp.rate === 'string' 
-            ? parseFloat(emp.rate) 
-            : emp.rate;
-        }
-        
-        if (isNaN(rate) || rate === null || rate === 0) {
-          const existingPayroll = payrolls.find(p => p.employee_id === emp.employee_id);
-          if (existingPayroll && existingPayroll.hourly_rate) {
-            rate = existingPayroll.hourly_rate;
-          } else {
-            rate = settings?.default_hourly_rate || 86.87;
+        if (!error && details && details.success && details.employee) {
+          const employeeDetails = details.employee;
+          if (employeeDetails.hourly_rate && employeeDetails.hourly_rate > 0) {
+            rate = employeeDetails.hourly_rate;
           }
-        }
-        
-        if (isNaN(rate) || rate <= 0) {
-          rate = 86.87;
+        } else if (emp.hourly_rate && emp.hourly_rate > 0) {
+          // Fallback to list response rate if detail fetch failed
+          rate = emp.hourly_rate;
         }
         
         initialForm[emp.employee_id] = {
@@ -374,75 +366,65 @@ const fetchActiveEmployees = async () => {
     }
   };
 
-  const applyBulkRateUpdate = async () => {
-    const selectedEmployees = Object.entries(bulkRateForm)
-      .filter(([_, data]) => data.selected)
-      .map(([empId, data]) => ({
-        employee_id: empId,
-        hourly_rate: data.hourly_rate,
-        name: employees.find(e => e.employee_id === empId)?.name || empId
-      }));
+const applyBulkRateUpdate = async () => {
+  const selectedEmployees = Object.entries(bulkRateForm)
+    .filter(([_, data]) => data.selected)
+    .map(([empId, data]) => ({
+      employee_id: empId,
+      hourly_rate: data.hourly_rate,
+      name: employees.find(e => e.employee_id === empId)?.name || empId
+    }));
+  
+  if (selectedEmployees.length === 0) {
+    setBulkValidationError('❌ Please select at least one employee');
+    return;
+  }
+
+  if (!window.confirm(`Update hourly rates for ${selectedEmployees.length} employee(s)?\n\nThis will update the employee records and regenerate their payroll for the current week.`)) {
+    return;
+  }
+
+  try {
+    setLoadingEmployees(true);
     
-    if (selectedEmployees.length === 0) {
-      setBulkValidationError('❌ Please select at least one employee');
-      return;
+    // Update the rates
+    const response = await employeeAPI.bulkUpdateRates(selectedEmployees);
+    
+    if (response.data.success) {
+      await logActivity(
+        'Bulk Updated Hourly Rates',
+        `Updated hourly rates for ${response.data.success_count} employees`
+      );
+      
+      alert(`✅ Successfully updated rates for ${response.data.success_count} employees!`);
+      
+      // IMPORTANT: Regenerate payroll for the affected employees for the current week
+      const payrollRegeneratePromises = selectedEmployees.map(emp => 
+        weeklyPayrollAPI.autoGenerate({
+          week_start: selectedWeek.start,
+          week_end: selectedWeek.end,
+          employee_id: emp.employee_id  // You may need to modify your API to accept employee_id
+        }).catch(err => ({ error: true, emp: emp.name, err }))
+      );
+      
+      // Wait for all payroll regenerations to complete
+      await Promise.all(payrollRegeneratePromises);
+      
+      // Refresh payroll data to show updated rates
+      await fetchPayrollData();
+      
+      setIsBulkRateModalOpen(false);
+    } else {
+      setBulkValidationError(`❌ ${response.data.message || 'Failed to update rates'}`);
     }
-
-    if (!window.confirm(`Update hourly rates for ${selectedEmployees.length} employee(s)?`)) {
-      return;
-    }
-
-    try {
-      setLoadingEmployees(true);
-      
-      const response = await employeeAPI.bulkUpdateRates(selectedEmployees);
-      
-      if (response.data.success) {
-        await logActivity(
-          'Bulk Updated Hourly Rates',
-          `Updated hourly rates for ${response.data.success_count} employees${response.data.fail_count > 0 ? `, ${response.data.fail_count} failed` : ''}`
-        );
-        
-        if (response.data.fail_count === 0) {
-          alert(`✅ Successfully updated rates for ${response.data.success_count} employees!`);
-          setIsBulkRateModalOpen(false);
-          fetchPayrollData();
-        } else {
-          alert(`⚠️ Updated ${response.data.success_count} employees, failed for ${response.data.fail_count} employees.\nFailed: ${response.data.failed_employees.join(', ')}`);
-        }
-      } else {
-        setBulkValidationError(`❌ ${response.data.message || 'Failed to update rates'}`);
-      }
-      
-    } catch (error) {
-      console.error('Error updating rates:', error);
-      
-      let successCount = 0;
-      let failCount = 0;
-      const failedEmployees = [];
-      
-      for (const emp of selectedEmployees) {
-        try {
-          await employeeAPI.updateSimpleRate(emp.employee_id, emp.hourly_rate);
-          successCount++;
-        } catch (err) {
-          console.error(`Failed to update ${emp.name}:`, err);
-          failCount++;
-          failedEmployees.push(emp.name);
-        }
-      }
-      
-      if (failCount === 0) {
-        alert(`✅ Successfully updated rates for ${successCount} employees!`);
-        setIsBulkRateModalOpen(false);
-        fetchPayrollData();
-      } else {
-        alert(`⚠️ Updated ${successCount} employees, failed for ${failCount} employees.\nFailed: ${failedEmployees.join(', ')}`);
-      }
-    } finally {
-      setLoadingEmployees(false);
-    }
-  };
+    
+  } catch (error) {
+    console.error('Error updating rates:', error);
+    setBulkValidationError('❌ Failed to update rates. Please try again.');
+  } finally {
+    setLoadingEmployees(false);
+  }
+};
 
   const getFilteredBulkEmployees = () => {
     return employees.filter(emp => {
@@ -474,7 +456,7 @@ const openPayslip = async (payroll) => {
     // ===== GET HOLIDAYS FROM DATABASE =====
     let holidaysData = {};
     try {
-      const holidaysResponse = await axios.get("http://localhost:5000/api/calendar/holidays");
+      const holidaysResponse = await attendanceAPI.getHolidays?.() || await API.get('/calendar/holidays');
       if (holidaysResponse.data.success) {
         holidaysData = holidaysResponse.data.holidays.reduce((acc, holiday) => {
           acc[holiday.date] = {

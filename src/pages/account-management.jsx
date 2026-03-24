@@ -1,7 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { logActivity } from '../utils/activityLogger';
-import { useAuth } from '../context/AuthContext'; // Add this import
+import { useAuth } from '../context/AuthContext';
+import API, { 
+  getHealth,
+  getAllEmployees,
+  getDepartments,
+  syncAttendanceDB,
+  processAllFaces
+} from '../services/api';
 
 const AccountManagement = () => {
   const { user } = useAuth(); // Get current logged-in user
@@ -154,31 +161,29 @@ const AccountManagement = () => {
   const fetchEmployees = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:5000/api/employees');
-      const data = await response.json();
+      const response = await API.get('/employees');
+      const data = response.data;
       if (data.success) {
         // Fetch face data status and full employee data for each employee
         const employeesWithFullData = await Promise.all(
           data.employees.map(async (emp) => {
             try {
               // Fetch face info
-              const faceResponse = await fetch(`http://localhost:5000/api/employee/${emp.employee_id}/face-info`);
+              const faceResponse = await API.get(`/employee/${emp.employee_id}/face-info`);
               let hasFaceData = false;
-              if (faceResponse.ok) {
-                const faceData = await faceResponse.json();
-                hasFaceData = faceData.has_face_data;
+              if (faceResponse.data) {
+                hasFaceData = faceResponse.data.has_face_data;
               }
               
               // Fetch full employee data to get profile_image_base64
               try {
-                const empResponse = await fetch(`http://localhost:5000/api/employee/${emp.employee_id}`);
-                if (empResponse.ok) {
-                  const empData = await empResponse.json();
+                const empResponse = await API.get(`/employee/${emp.employee_id}`);
+                if (empResponse.data.success) {
                   return { 
                     ...emp, 
                     has_face_data: hasFaceData,
-                    profile_image_base64: empData.employee?.profile_image_base64,
-                    face_image_base64: empData.employee?.face_image_base64
+                    profile_image_base64: empResponse.data.employee?.profile_image_base64,
+                    face_image_base64: empResponse.data.employee?.face_image_base64
                   };
                 }
               } catch (err) {
@@ -204,8 +209,8 @@ const AccountManagement = () => {
 
   const checkSystemHealth = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:5000/health');
-      const data = await response.json();
+      const response = await getHealth();
+      const data = response.data;
       setSystemHealth(data);
       return data;
     } catch (error) {
@@ -218,14 +223,8 @@ const AccountManagement = () => {
   const syncAttendanceDatabase = useCallback(async () => {
     try {
       console.log("[SYNC] Starting database sync...");
-      const response = await fetch('http://localhost:5000/api/sync/attendance-db', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      });
-      
-      const data = await response.json();
+      const response = await syncAttendanceDB();
+      const data = response.data;
       
       if (data.success) {
         console.log(`[SYNC] Success: Added ${data.synced_count}, Removed ${data.deleted_count}`);
@@ -243,8 +242,8 @@ const AccountManagement = () => {
   // Function to fetch departments from MongoDB
   const fetchDepartments = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/departments');
-      const data = await response.json();
+      const response = await getDepartments();
+      const data = response.data;
       
       if (data.success) {
         console.log("Fetched departments:", data.data);
@@ -431,12 +430,13 @@ const AccountManagement = () => {
       console.log("Profile picture:", newEmployee.profile_picture ? "Yes" : "No");
       console.log("Face image:", newEmployee.face_image ? "Yes" : "No");
 
-      const createResponse = await fetch('http://localhost:5000/api/employee/register', {
-        method: 'POST',
-        body: formData
+      const createResponse = await API.post('/employee/register', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
       });
       
-      const createData = await createResponse.json();
+      const createData = createResponse.data;
       
       if (!createData.success) {
         if (createData.errors && createData.errors.length > 0) {
@@ -515,15 +515,8 @@ const AccountManagement = () => {
     
     if (window.confirm(`Are you sure you want to ${newStatus} this employee?`)) {
       try {
-        const response = await fetch(`http://localhost:5000/api/employees/${employeeId}/status`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ status: newStatus })
-        });
-        
-        const data = await response.json();
+        const response = await API.put(`/employees/${employeeId}/status`, { status: newStatus });
+        const data = response.data;
         
         if (data.success) {
           const employee = employees.find(emp => emp.employee_id === employeeId);
@@ -561,12 +554,13 @@ const AccountManagement = () => {
         formData.append('name', employeeName);
 
         try {
-          const response = await fetch(`http://localhost:5000/api/employee/${employeeId}/update-face`, {
-            method: 'POST',
-            body: formData
+          const response = await API.post(`/employee/${employeeId}/update-face`, formData, {
+            headers: {
+              'Content-Type': 'multipart/form-data'
+            }
           });
           
-          const data = await response.json();
+          const data = response.data;
           setExtractingFeatures(false);
 
           if (data.success) {
@@ -625,11 +619,8 @@ const AccountManagement = () => {
         setExtractingFeatures(true);
         showAlert("info", "Starting batch processing of all face images...");
 
-        const response = await fetch('http://localhost:5000/api/process-all-faces', {
-          method: 'POST'
-        });
-        
-        const data = await response.json();
+        const response = await processAllFaces();
+        const data = response.data;
         setExtractingFeatures(false);
 
         if (data.success) {
