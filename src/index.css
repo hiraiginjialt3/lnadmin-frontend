@@ -1,0 +1,143 @@
+/* Reset and base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f5f7fa;
+  color: #333;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* App layout */
+.app-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main-content {
+  flex: 1;
+  margin-left: 250px; /* Same as sidebar width */
+  display: flex;
+  flex-direction: column;
+}
+
+.content-wrapper {
+  flex: 1;
+  padding: 30px;
+  overflow-y: auto;
+}
+
+/* Page styles */
+.page {
+  padding: 20px;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.page-header h1 {
+  color: #2c3e50;
+  font-size: 28px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.page-content {
+  background: white;
+  border-radius: 10px;
+  padding: 30px;
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* Card styles */
+.card {
+  background: white;
+  border-radius: 8px;
+  padding: 25px;
+  box-shadow: 0 2px 15px rgba(0, 0, 0, 0.08);
+  margin-bottom: 20px;
+}
+
+.card h3 {
+  color: #2c3e50;
+  margin-bottom: 15px;
+  font-size: 18px;
+}
+
+/* Button styles */
+.btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-primary {
+  background: #3498db;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #2980b9;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+}
+
+.btn-secondary {
+  background: #95a5a6;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #7f8c8d;
+}
+
+.btn-danger {
+  background: #e74c3c;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #c0392b;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 0;
+  }
+  
+  .content-wrapper {
+    padding: 15px;
+  }
+  
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+}

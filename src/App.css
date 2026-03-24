@@ -1,0 +1,370 @@
+/* Global Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+        sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: #f5f7fa;
+}
+
+.app-container {
+    display: flex;
+}
+
+.main-content {
+    flex: 1;
+    margin-left: 260px;
+    min-width: 0; /* IMPORTANT for flex overflow */
+    transition: margin-left 0.3s ease;
+}
+@media (max-width: 768px) {
+    .main-content {
+        margin-left: 0 !important;
+    }
+
+    .content-wrapper {
+        padding: 16px;
+    }
+}
+
+
+.content-wrapper {
+    padding: 24px;
+}
+
+/* Utility Classes */
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.btn-primary {
+    background-color: #3498db;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #2980b9;
+}
+
+.btn-secondary {
+    background-color: #95a5a6;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background-color: #7f8c8d;
+}
+
+.btn-danger {
+    background-color: #e74c3c;
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #c0392b;
+}
+
+.btn-sm {
+    padding: 5px 10px;
+    font-size: 12px;
+}
+
+/* Table Styles */
+.table-container {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    margin-top: 20px;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th {
+    background-color: #f8f9fa;
+    padding: 15px;
+    text-align: left;
+    font-weight: 600;
+    color: #2c3e50;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.data-table td {
+    padding: 15px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.data-table tr:hover {
+    background-color: #f8f9fa;
+}
+
+/* Status Badges */
+.status-badge {
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    display: inline-block;
+}
+
+.status-pending {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.status-paid {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.status-contested {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 8px;
+    padding: 30px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.modal-header h2 {
+    color: #2c3e50;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #7f8c8d;
+}
+
+/* Form Styles */
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #2c3e50;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 14px;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+/* Loading States */
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: #7f8c8d;
+}
+
+.no-data {
+    text-align: center;
+    padding: 40px;
+    color: #95a5a6;
+}
+
+/* Dashboard Styles */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+}
+
+
+.stat-card {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.stat-card h3 {
+    color: #7f8c8d;
+    font-size: 14px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+
+.stat-value {
+    font-size: 32px;
+    font-weight: 700;
+    color: #2c3e50;
+}
+
+.stat-card.blue {
+    border-top: 4px solid #3498db;
+}
+
+.stat-card.green {
+    border-top: 4px solid #2ecc71;
+}
+
+.stat-card.orange {
+    border-top: 4px solid #f39c12;
+}
+
+.stat-card.purple {
+    border-top: 4px solid #9b59b6;
+}
+
+/* Action Buttons */
+.action-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .app-container {
+        flex-direction: column;
+    }
+    
+    .content-wrapper {
+        padding: 10px;
+    }
+    
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .data-table {
+        display: block;
+        overflow-x: auto;
+    }
+}
+
+@media (max-width: 768px) {
+    .sidebar {
+        display: none;
+    }
+}
+
+
+.app-container.no-sidebar .main-content {
+    margin-left: 0;
+}
+
+.app-container.no-sidebar .content-wrapper {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 32px 20px;
+    width: 100%;
+}
+
+
+/* App.css or any global CSS file */
+.gov-icon {
+  width: 60px; /* adjust size as needed */
+  height: auto; /* maintain aspect ratio */
+}
+
+
+
+
+
+
+/*  employee side*/
+
+
+
+/* ===========================
+   App Container
+=========================== */
+.app-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Sidebar hidden */
+.no-sidebar .main-content {
+  margin-left: 0;
+}
+
+/* Main Content */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Content Wrapper (page content area) */
+.content-wrapper {
+  padding: 2rem;
+  flex: 1;
+  background-color: #f5f5f5;
+}
+
+/* Optional: Sidebar width */
+.app-container .sidebar,
+.app-container .employee-sidebar {
+  width: 250px; /* adjust based on your design */
+  min-width: 250px;
+}

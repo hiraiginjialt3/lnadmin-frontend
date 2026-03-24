@@ -1,0 +1,237 @@
+/* =========================
+   Sidebar Base
+========================= */
+.sidebar {
+    width: 260px;
+    height: calc(100vh - 70px);
+    background: #ffffff;
+    border-right: 1px solid #e5e5e5;
+    padding: 16px;
+    position: fixed;
+    top: 70px;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 0.85rem;
+    transition: transform 0.3s ease, max-height 0.35s ease, padding 0.3s ease;
+    overflow-y: auto;
+    z-index: 1000;
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;     /* Firefox */
+}
+
+.sidebar::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+}
+
+.hamburger {
+    position: fixed;
+    top: 18px;
+    left: 16px;
+    background: #0d6efd;
+    border: none;
+    color: #fff;
+    font-size: 24px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    z-index: 1200;
+    display: none;
+}
+
+/* =========================
+   Profile Section
+========================= */
+.profile {
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.avatar {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 10px;
+    border-radius: 50%;
+    background: #f1f3f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.avatar i {
+    font-size: 32px;
+    color: #6c757d;
+}
+
+.username {
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin: 0;
+    word-break: break-word;
+}
+
+.role {
+    font-size: 0.75rem;
+    color: #777;
+    margin-bottom: 10px;
+}
+
+/* =========================
+   Menu / Navigation
+========================= */
+.menu {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    color: #222;
+    font-size: 0.85rem;
+    padding: 6px 8px;
+    border-radius: 6px;
+    transition: background 0.2s, color 0.2s;
+}
+
+.menu-item i {
+    font-size: 16px;
+}
+
+.menu-item:hover {
+    background-color: #e7f1ff;
+    color: #0d6efd;
+}
+
+.menu-item.active {
+    font-weight: 600;
+    color: #0d6efd;
+}
+
+/* =========================
+   Logout
+========================= */
+.logout {
+    margin-top: auto;
+}
+
+.logout-btn {
+    width: 100%;
+    padding: 6px 0;
+    background: transparent;
+    border: 1px solid #dc3545;
+    color: #dc3545;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.logout-btn:hover {
+    background: #dc3545;
+    color: #ffffff;
+}
+
+/* =========================
+   Divider
+========================= */
+hr {
+    border: none;
+    border-top: 1px solid #e5e5e5;
+    margin: 12px 0;
+}
+
+/* =========================
+   Responsive / Tablet
+========================= */
+@media (max-width: 1024px) {
+    .sidebar {
+        width: 220px;
+        padding: 12px;
+    }
+
+    .avatar {
+        width: 56px;
+        height: 56px;
+    }
+
+    .avatar i {
+        font-size: 28px;
+    }
+
+    .menu-item {
+        font-size: 0.8rem;
+        gap: 6px;
+    }
+
+    .logout-btn {
+        font-size: 0.8rem;
+    }
+}
+
+/* =========================
+   Responsive / Phone
+========================= */
+@media (max-width: 768px) {
+    .hamburger {
+        display: block;
+    }
+
+    .sidebar {
+        position: fixed;
+        top: 60px;
+        left: 16px;
+        right: 16px;
+        width: auto;
+        max-height: 0;
+        overflow: hidden;
+        border-radius: 12px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        padding: 0 16px;
+        transition: max-height 0.35s ease, padding 0.3s ease;
+        background: #ffffff;
+    }
+
+    .sidebar.open {
+        max-height: 80vh;
+        padding: 16px;
+        overflow-y: auto;
+    }
+
+    .menu-item {
+        font-size: 0.8rem;
+        gap: 6px;
+        padding: 6px 8px;
+    }
+
+    .menu-item i {
+        font-size: 16px;
+    }
+
+    .logout-btn {
+        font-size: 0.8rem;
+        padding: 6px 0;
+    }
+
+    .avatar {
+        width: 50px;
+        height: 50px;
+    }
+
+    .avatar i {
+        font-size: 24px;
+    }
+
+    .username {
+        font-size: 0.85rem;
+    }
+
+    .role {
+        font-size: 0.7rem;
+    }
+}

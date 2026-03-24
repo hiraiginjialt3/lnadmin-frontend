@@ -1,0 +1,55 @@
+{
+  "name": "violations-system",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@fullcalendar/daygrid": "^6.1.20",
+    "@fullcalendar/interaction": "^6.1.20",
+    "@fullcalendar/react": "^6.1.20",
+    "@mui/icons-material": "^7.3.7",
+    "@mui/material": "^7.3.7",
+    "axios": "^1.13.5",
+    "bootstrap": "^5.3.8",
+    "bootstrap-icons": "^1.13.1",
+    "chart.js": "^4.5.1",
+    "date-fns": "^4.1.0",
+    "lz-string": "^1.5.0",
+    "react": "^18.2.0",
+    "react-bootstrap": "^2.10.10",
+    "react-chartjs-2": "^5.3.1",
+    "react-datepicker": "^9.1.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.30.3",
+    "react-scripts": "^5.0.1"
+  },
+  "scripts": {
+    "start": "set DISABLE_ESLINT_PLUGIN=true && set HTTPS=false && set PORT=3000 && react-scripts start",
+    "build": "set DISABLE_ESLINT_PLUGIN=true && react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject",
+    "predeploy": "npm run build",
+    "deploy": "echo 'Deployment handled by Render'"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "proxy": "http://localhost:5000",
+  "homepage": "."
+}

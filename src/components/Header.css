@@ -1,0 +1,106 @@
+.header-banner {
+    background-color: #0d6efd;
+    color: white;
+    padding: 15px 30px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 1030;
+}
+
+
+.header-logo {
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+
+.header-left h1 {
+    color: #2c3e50;
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 25px;
+}
+body {
+    padding-top: 80px;
+}
+
+.notification-bell {
+    position: relative;
+    cursor: pointer;
+    font-size: 20px;
+}
+
+.bell-icon {
+    color: #7f8c8d;
+    transition: color 0.3s;
+}
+
+.notification-bell:hover .bell-icon {
+    color: #3498db;
+}
+
+.notification-count {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: #e74c3c;
+    color: white;
+    font-size: 12px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 8px;
+    transition: background 0.3s;
+}
+
+.user-profile:hover {
+    background: #f8f9fa;
+}
+
+.avatar {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, #3498db, #2ecc71);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 18px;
+}
+
+.user-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.user-name {
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 14px;
+}
+
+.user-role {
+    font-size: 12px;
+    color: #7f8c8d;
+}
