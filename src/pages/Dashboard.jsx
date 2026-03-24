@@ -322,20 +322,6 @@ const Dashboard = () => {
               hover
             />
             
-            {/* Attendance Rate - Admin, Accountant, Employee */}
-            {(isAdmin || isAccountant || isEmployee) && (
-              <SummaryCard
-                title="Attendance Rate"
-                value={totalEmployees && todayAttendance?.stats?.total_today 
-                  ? `${Math.round((todayAttendance.stats.total_today / totalEmployees) * 100)}%` 
-                  : "0%"}
-                icon="graph-up"
-                color="secondary"
-                bg="bg-secondary-subtle"
-                rounded="rounded-4"
-                hover
-              />
-            )}
           </div>
 
           {/* Management Section - Role-based module visibility */}
