@@ -252,7 +252,8 @@ const syncWithRetry = async (pending, retryCount = 0) => {
         'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({ activities: pending }),
-      signal: controller.signal
+      signal: controller.signal,
+      credentials: 'include'
     });
 
     clearTimeout(timeoutId);
@@ -479,7 +480,10 @@ export const getActivitiesWithPagination = measurePerformance(
 
         const response = await fetch(
           `${ACTIVITY_CONFIG.API_URL}/system-logs?${queryParams.toString()}`,
-          { headers: { 'Authorization': `Bearer ${token}` } }
+          { 
+            headers: { 'Authorization': `Bearer ${token}` },
+            credentials: 'include'
+          }
         );
 
         if (response.ok) {
@@ -599,7 +603,10 @@ export const loadFromDatabase = async () => {
     
     const response = await fetch(
       `${ACTIVITY_CONFIG.API_URL}/system-logs?page=1&limit=200&sort=-timestamp`,
-      { headers: { 'Authorization': `Bearer ${token}` } }
+      { 
+        headers: { 'Authorization': `Bearer ${token}` },
+        credentials: 'include'
+      }
     );
 
     if (!response.ok) {
@@ -642,7 +649,8 @@ export const getCategoryStats = async () => {
     const token = await getValidToken();
     if (token && navigator.onLine) {
       const response = await fetch(`${ACTIVITY_CONFIG.API_URL}/system-logs/stats`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` },
+        credentials: 'include'
       });
       
       if (response.ok) {
