@@ -493,21 +493,23 @@ const handlePermanentDelete = useCallback(async (activityId) => {
   }, []);
 
   // Format timestamp
-  const formatTimestamp = useCallback((timestamp) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
+const formatTimestamp = useCallback((activity) => {
+  // Use archivedAt for archived logs, timestamp for active logs
+  const timestamp = activity.archivedAt || activity.timestamp;
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-    
-    return date.toLocaleString();
-  }, []);
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+  if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  
+  return date.toLocaleString();
+}, []);
 
   // Get action icon
   const getActionIcon = useCallback((action) => {
@@ -1145,7 +1147,7 @@ const handlePermanentDelete = useCallback(async (activityId) => {
                         )}
                       </div>
                       <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                        {formatTimestamp(activity.timestamp)}
+                        {formatTimestamp(activity)}
                       </span>
                     </div>
                     

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import axios from "axios";
 import { weeklyPayrollAPI, attendanceSettingsAPI, employeeAPI, attendanceAPI } from "../services/api";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
@@ -464,7 +463,6 @@ const fetchActiveEmployees = async () => {
     });
   };
 
-// UPDATED openPayslip with holiday support
 const openPayslip = async (payroll) => {
   // Check if payroll is paid
   if (payroll.status !== 'paid') {
@@ -478,23 +476,34 @@ const openPayslip = async (payroll) => {
   try {
     setLoadingAttendance(true);
     
-    // ===== GET HOLIDAYS FROM DATABASE =====
-    let holidaysData = {};
-    try {
-      const holidaysResponse = await API.get("/calendar/holidays");
-      if (holidaysResponse.data.success) {
-        holidaysData = holidaysResponse.data.holidays.reduce((acc, holiday) => {
-          acc[holiday.date] = {
-            name: holiday.name,
-            type: holiday.type,
-            rate: holiday.type === 'regular' ? 2.0 : 1.3
-          };
-          return acc;
-        }, {});
+    // ===== GET HOLIDAYS FROM DATABASE WITH CORRECT RATES =====
+let holidaysData = {};
+try {
+  const holidaysResponse = await API.get("/calendar/holidays");
+  if (holidaysResponse.data.success) {
+    holidaysData = holidaysResponse.data.holidays.reduce((acc, holiday) => {
+      let rate = 1.0;
+      
+      // Match the backend logic exactly
+      if (holiday.type === 'regular') {
+        rate = 2.0;      // Regular Holiday - 200%
+      } else if (holiday.type === 'special_non_working') {
+        rate = 1.3;      // Special Non-Working - 130%
+      } else if (holiday.type === 'special_working') {
+        rate = 1.0;      // Special Working - 100% (regular rate)
       }
-    } catch (err) {
-      console.error('[Holidays] Failed to load:', err);
-    }
+      
+      acc[holiday.date] = {
+        name: holiday.name,
+        type: holiday.type,
+        rate: rate
+      };
+      return acc;
+    }, {});
+  }
+} catch (err) {
+  console.error('[Holidays] Failed to load:', err);
+}
     
     const getHolidayInfo = (dateStr) => {
       return holidaysData[dateStr] || null;
@@ -583,14 +592,26 @@ const openPayslip = async (payroll) => {
         
         let regularHours = 0, overtimeHours = 0, sundayHours = 0, sundayOvertimeHours = 0, holidayHours = 0, holidayOvertimeHours = 0;
         const standardHours = settings?.standard_work_hours || 8;
-        
+
         if (totalHours > 0) {
           if (isHoliday) {
-            if (totalHours <= standardHours) {
-              holidayHours = totalHours;
+            // Check if it's a Special Working Holiday (rate = 1.0)
+            if (holidayInfo && holidayInfo.rate === 1.0) {
+              // Special Working Holiday → treat as REGULAR day
+              if (totalHours <= standardHours) {
+                regularHours = totalHours;
+              } else {
+                regularHours = standardHours;
+                overtimeHours = totalHours - standardHours;
+              }
             } else {
-              holidayHours = standardHours;
-              holidayOvertimeHours = totalHours - standardHours;
+              // Regular Holiday or Special Non-Working → premium pay
+              if (totalHours <= standardHours) {
+                holidayHours = totalHours;
+              } else {
+                holidayHours = standardHours;
+                holidayOvertimeHours = totalHours - standardHours;
+              }
             }
           } else if (dayName === 'SUN') {
             if (totalHours <= standardHours) {
@@ -2112,16 +2133,6 @@ const markAsPaid = async (payrollId) => {
                               </tr>
                             </tbody>
                           </table>
-
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '9px', border: '1px solid #ddd', padding: '4px 6px', background: '#fafafa', flexWrap: 'wrap' }}>
-                            <span>₱{breakdown.hourlyRate.toFixed(2)}/hr</span>
-                            <span>OT: {breakdown.otRate}x</span>
-                            <span>SUN: {breakdown.sundayRate}x</span>
-                            <span>SUN-OT: {breakdown.sundayRate}x × {breakdown.otRate}x</span>
-                            <span>HOL: {breakdown.holidayRate}x</span>
-                            <span>HOL-OT: {breakdown.holidayRate}x × {breakdown.otRate}x</span>
-                          </div>
-
                           <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
                             <table style={{ width: '50%', borderCollapse: 'collapse', fontSize: '9px' }}>
                               <tbody>

@@ -24,7 +24,7 @@ export const AuthProvider = ({ children }) => {
         { path: '/attendance', name: 'Attendance', icon: 'bi-calendar-check', roles: ['Admin', 'Accountant', 'HR'] },
         { path: '/salary', name: 'Salary', icon: 'bi-cash-stack', roles: ['Admin', 'Accountant'] },
         { path: '/admincalendar', name: 'Company Calendar', icon: 'bi-calendar', roles: ['Admin', 'HR', 'Accountant', 'Employee'] },
-        { path: '/admin/leaves', name: 'Leave Management', icon: 'bi-calendar-check-fill', roles: ['Admin', 'HR', 'Accountant', 'Employee'] },
+        { path: '/admin/leaves', name: 'Leave Management', icon: 'bi-calendar-check-fill', roles: ['Admin', 'HR'] },
         { path: '/govinfo', name: 'Government Info', icon: 'bi-file-earmark-text', roles: ['Admin', 'HR', 'Accountant', 'Employee'] },
         { path: '/violations', name: 'Violations & Negligences', icon: 'bi-exclamation-triangle', roles: ['Admin', 'HR'] },
         { path: '/documents', name: 'Documents', icon: 'bi-folder', roles: ['Admin', 'HR', 'Accountant', 'Employee'] },

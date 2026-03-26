@@ -366,6 +366,8 @@ export const restoreArchivedActivity = async (activityId) => {
   
   const restoredActivity = { ...archived[activityIndex] };
   delete restoredActivity.archivedAt;
+  delete restoredActivity.archived_at;
+
   
   // Remove from archived
   archived.splice(activityIndex, 1);

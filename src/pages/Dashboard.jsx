@@ -201,7 +201,8 @@ const Dashboard = () => {
         </div>
       ) : (
         <>
-          {/* Leave Management Summary Card - Visible to all roles */}
+        {/* Leave Management Summary Card - HR and Admin only */}
+        {(isAdmin || isHR) && (
           <div className="row mb-4">
             <div className="col-12">
               <div className="card border-primary shadow-sm rounded-0">
@@ -256,7 +257,7 @@ const Dashboard = () => {
               </div>
             </div>
           </div>
-
+)}
           {/* Summary Cards - Role-based visibility */}
           <div className="row g-3 mb-4">
             {/* Total Employees - Admin & HR only */}
@@ -311,16 +312,18 @@ const Dashboard = () => {
               />
             )}
             
-            {/* Pending Leaves - All roles */}
-            <SummaryCard
-              title="Pending Leaves"
-              value={leaveStats.pending}
-              icon="calendar-check-fill"
-              color="info"
-              bg="bg-info-subtle"
-              rounded="rounded-4"
-              hover
-            />
+            {/* Pending Leaves - HR and Admin only */}
+            {(isAdmin || isHR) && (
+              <SummaryCard
+                title="Pending Leaves"
+                value={leaveStats.pending}
+                icon="calendar-check-fill"
+                color="info"
+                bg="bg-info-subtle"
+                rounded="rounded-4"
+                hover
+              />
+            )}
             
           </div>
 
@@ -369,14 +372,16 @@ const Dashboard = () => {
                   description={isAdmin || isHR ? "Manage the Dates" : "View company calendar"}
                 />
                 
-                {/* Leave Management - All roles */}
-                <ModuleCard
-                  to="/admin/leaves"
-                  icon="calendar-check-fill"
-                  title="Leave Management"
-                  description={`Manage leave requests (${leaveStats.pending} pending)`}
-                  badge={leaveStats.pending > 0 ? leaveStats.pending : null}
-                />
+                {/* Leave Management - HR and Admin only */}
+                {(isAdmin || isHR) && (
+                  <ModuleCard
+                    to="/admin/leaves"
+                    icon="calendar-check-fill"
+                    title="Leave Management"
+                    description={`Manage leave requests (${leaveStats.pending} pending)`}
+                    badge={leaveStats.pending > 0 ? leaveStats.pending : null}
+                  />
+                )}
                 
                 {/* Government Info - Admin & Employee only */}
                 {(isAdmin || isEmployee) && (

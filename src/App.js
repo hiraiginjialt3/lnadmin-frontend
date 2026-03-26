@@ -218,7 +218,7 @@ const Layout = () => {
             <Route 
               path="/admin/leaves" 
               element={
-                <ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.HR, ROLES.ACCOUNTANT, ROLES.EMPLOYEE]}>
+                <ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.HR]}>
                   <AdminLeaveManagement />
                 </ProtectedRoute>
               } 
