@@ -14,6 +14,7 @@
     "bootstrap": "^5.3.8",
     "bootstrap-icons": "^1.13.1",
     "chart.js": "^4.5.1",
+    "cross-env": "^10.1.0",
     "date-fns": "^4.1.0",
     "lz-string": "^1.5.0",
     "react": "^18.2.0",
@@ -49,8 +50,5 @@
     ]
   },
   "proxy": "http://localhost:5000",
-  "homepage": ".",
-  "devDependencies": {
-    "cross-env": "^10.1.0"
-  }
+  "homepage": "."
 }

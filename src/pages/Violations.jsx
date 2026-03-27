@@ -282,36 +282,7 @@ const Violations = () => {
                 </button>
             </div>
 
-            {/* SYSTEM STATUS INDICATOR */}
-            <div style={{ 
-                marginBottom: '15px', 
-                padding: '8px 15px', 
-                background: '#e8f5e9', 
-                borderRadius: '5px',
-                border: '1px solid #81c784',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px'
-            }}>
-                <span style={{ fontSize: '20px' }}>✅</span>
-                <div style={{ fontSize: '13px', color: '#2e7d32' }}>
-                    <strong>Auto-Detection Active:</strong> Late violations are automatically created when employees clock in after 8:16 AM or during night shift (1:00 AM - 5:00 AM)
-                </div>
-            </div>
-
-            {/* DEBUG INFO */}
-            <div style={{ marginBottom: '15px', padding: '10px', background: '#f8f9fa', borderRadius: '5px' }}>
-                <div style={{ fontSize: '12px', color: '#666' }}>
-                    Database: ems_violations.employee_violations | 
-                    Total Violations: {violations.length} | 
-                    Employees Available: {employees.length} | 
-                    Auto-generated: {violations.filter(v => v.source === 'auto_late_detection').length} |
-                    Night Shift: {violations.filter(v => v.shift_type === 'night').length} |
-                    Morning Shift: {violations.filter(v => v.shift_type === 'morning' && v.source === 'auto_late_detection').length}
-                </div>
-            </div>
-
-            {/* SEARCH - Auto-generated filter button REMOVED */}
+            {/* SEARCH */}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center' }}>
                 <input
                     type="text"
@@ -514,7 +485,6 @@ const Violations = () => {
                                     value={formData.violation_type}
                                     onChange={e => setFormData({ ...formData, violation_type: e.target.value })}
                                 >
-                                    <option value="Tardiness">Tardiness</option>
                                     <option value="Absenteeism">Absenteeism</option>
                                     <option value="Policy Violation">Policy Violation</option>
                                     <option value="Misconduct">Misconduct</option>

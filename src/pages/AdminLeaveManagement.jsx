@@ -480,7 +480,7 @@ const AdminLeaveManagement = () => {
                             </td>
                             <td>
                               <span className="badge bg-secondary fs-6 p-2">
-                                {total} / 15
+                                {total}
                               </span>
                             </td>
                             <td>

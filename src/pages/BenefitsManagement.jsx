@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { benefitsAPI, employeeAPI, sssBracketsAPI, attendanceSettingsAPI } from "../services/api";
+import { benefitsAPI, employeeAPI, sssBracketsAPI, attendanceSettingsAPI, weeklyPayrollAPI } from "../services/api";
 import { useCompanySettings } from "../context/CompanySettingsContext";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
@@ -32,6 +32,11 @@ const BenefitsManagement = () => {
   const [deleteAllLoading, setDeleteAllLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingBracketId, setDeletingBracketId] = useState(null);
+  
+  // ========== NEW: Payroll rates state ==========
+  const [payrollRates, setPayrollRates] = useState(new Map());
+  const [loadingRates, setLoadingRates] = useState(false);
+  const [currentWeekRange, setCurrentWeekRange] = useState({ start: '', end: '' });
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -96,6 +101,101 @@ const BenefitsManagement = () => {
   }, []);
   
   // ============================================
+  // GET CURRENT WEEK RANGE
+  // ============================================
+  
+  const getCurrentSunday = useCallback(() => {
+    const today = new Date();
+    const day = today.getDay();
+    const daysUntilSaturday = day === 6 ? 0 : 6 - day;
+    const saturday = new Date(today);
+    saturday.setDate(today.getDate() + daysUntilSaturday);
+    const sunday = new Date(saturday);
+    sunday.setDate(saturday.getDate() - 6);
+    return sunday.toISOString().split('T')[0];
+  }, []);
+  
+  const getCurrentSaturday = useCallback(() => {
+    const today = new Date();
+    const day = today.getDay();
+    const daysUntilSaturday = day === 6 ? 0 : 6 - day;
+    const saturday = new Date(today);
+    saturday.setDate(today.getDate() + daysUntilSaturday);
+    return saturday.toISOString().split('T')[0];
+  }, []);
+  
+  // ============================================
+  // FETCH PAYROLL RATES
+  // ============================================
+  
+  const fetchPayrollRates = useCallback(async () => {
+    setLoadingRates(true);
+    try {
+      const weekStart = getCurrentSunday();
+      const weekEnd = getCurrentSaturday();
+      setCurrentWeekRange({ start: weekStart, end: weekEnd });
+      
+      const response = await weeklyPayrollAPI.getAll({
+        week_start: weekStart,
+        week_end: weekEnd
+      });
+      
+      if (response.data.success) {
+        const ratesMap = new Map();
+        (response.data.data || []).forEach(payroll => {
+          if (payroll.employee_id && payroll.hourly_rate) {
+            ratesMap.set(payroll.employee_id, payroll.hourly_rate);
+          }
+        });
+        setPayrollRates(ratesMap);
+      }
+    } catch (error) {
+      console.error('[Payroll Rates] Failed to fetch:', error);
+    } finally {
+      setLoadingRates(false);
+    }
+  }, [getCurrentSunday, getCurrentSaturday]);
+  
+  // ============================================
+  // GET EMPLOYEE HOURLY RATE FROM PAYROLL
+  // ============================================
+  
+  const getEmployeeHourlyRate = useCallback((employeeId) => {
+    const rate = payrollRates.get(employeeId);
+    if (rate && rate > 0) return rate;
+    
+    const employee = employees.find(e => e.employee_id === employeeId);
+    if (employee) {
+      if (employee.hourly_rate) return employee.hourly_rate;
+      if (employee.hourlyRate) return employee.hourlyRate;
+      if (employee.rate) return employee.rate;
+    }
+    
+    return companySettings?.default_hourly_rate || 86.87;
+  }, [payrollRates, employees, companySettings]);
+  
+  // ============================================
+  // FETCH EMPLOYEE WEEKLY SALARY
+  // ============================================
+  
+  const fetchEmployeeWeeklySalary = useCallback(async (employeeId) => {
+    try {
+      const hourlyRate = getEmployeeHourlyRate(employeeId);
+      
+      if (hourlyRate > 0) {
+        const hoursPerDay = companySettings?.standard_work_hours || 8;
+        const weeklySalary = hourlyRate * hoursPerDay * workDaysPerWeek;
+        setEmployeeWeeklySalary(weeklySalary);
+        return weeklySalary;
+      }
+      return 0;
+    } catch (error) {
+      console.error('[Salary] Error fetching employee:', error);
+      return 0;
+    }
+  }, [workDaysPerWeek, companySettings, getEmployeeHourlyRate]);
+  
+  // ============================================
   // DOLE HELPER - Convert weekly to monthly salary
   // ============================================
   
@@ -110,30 +210,6 @@ const BenefitsManagement = () => {
       return (dailyRate * 261) / 12;
     }
   }, [workDaysPerWeek]);
-  
-  // ============================================
-  // FETCH EMPLOYEE WEEKLY SALARY (DOLE Formula)
-  // ============================================
-  
-  const fetchEmployeeWeeklySalary = useCallback(async (employeeId) => {
-    try {
-      const response = await employeeAPI.getById(employeeId);
-      if (response.data && response.data.success && response.data.employee) {
-        const employeeDetails = response.data.employee;
-        if (employeeDetails.hourly_rate && employeeDetails.hourly_rate > 0) {
-          const hoursPerDay = employeeDetails.standard_hours_per_day || 
-                              companySettings?.standard_work_hours || 8;
-          const weeklySalary = employeeDetails.hourly_rate * hoursPerDay * workDaysPerWeek;
-          setEmployeeWeeklySalary(weeklySalary);
-          return weeklySalary;
-        }
-      }
-      return 0;
-    } catch (error) {
-      console.error('[Salary] Error fetching employee:', error);
-      return 0;
-    }
-  }, [workDaysPerWeek, companySettings]);
   
   // ============================================
   // BENEFITS CALCULATIONS (DOLE Formula)
@@ -219,7 +295,7 @@ const BenefitsManagement = () => {
       }
       setLastFetch(now);
     } catch (error) {
-      if (error.name !== 'AbortError') {
+      if (error.name !== 'AbortError' && error.code !== 'ERR_CANCELED' && !error.message?.includes('canceled')) {
         console.error("Error fetching data:", error);
         setValidationError("Error loading data");
         setTimeout(() => setValidationError(''), 3000);
@@ -323,7 +399,7 @@ const BenefitsManagement = () => {
         setSuccessMessage(`Benefits recalculated based on ₱${weeklySalary.toFixed(2)} weekly salary (₱${monthlyDisplay.toFixed(2)} monthly using DOLE formula)`);
         setTimeout(() => setSuccessMessage(''), 3000);
       } else {
-        setValidationError('No salary data found for this employee. Please set hourly rate first.');
+        setValidationError('No salary data found for this employee. Please set hourly rate in payroll first.');
         setTimeout(() => setValidationError(''), 3000);
       }
     } catch (error) {
@@ -441,7 +517,7 @@ const BenefitsManagement = () => {
       });
       
       if (weeklySalary === 0) {
-        setValidationError('⚠️ No salary found. Please set hourly rate first.');
+        setValidationError('⚠️ No salary found. Please set hourly rate in payroll first.');
         setTimeout(() => setValidationError(''), 5000);
       }
     }
@@ -450,7 +526,7 @@ const BenefitsManagement = () => {
   }, [fetchEmployeeWeeklySalary, benefitsMap, calculateSSSWeekly, calculatePhilHealthWeekly, calculatePagIBIGWeekly, sssBrackets]);
   
   // ============================================
-  // BRACKET CRUD OPERATIONS (keep your existing code)
+  // BRACKET CRUD OPERATIONS
   // ============================================
   
   const handleDelete = useCallback(async (id) => {
@@ -623,6 +699,7 @@ const BenefitsManagement = () => {
   }, [bracketForm, editingBracket, saving, resetBracketForm, bracketSettings]);
   
   const openBracketEditor = useCallback((bracket = null) => {
+    console.log('Opening bracket editor', bracket); // Debug log
     if (bracket) {
       setEditingBracket(bracket);
       setBracketForm({
@@ -896,6 +973,7 @@ const BenefitsManagement = () => {
   const renderEmployeeRows = () => {
     return paginatedEmployees.map(emp => {
       const employeeBenefits = benefitsMap.get(emp.employee_id);
+      const hourlyRate = getEmployeeHourlyRate(emp.employee_id);
       
       let total = 0;
       if (employeeBenefits) {
@@ -914,21 +992,24 @@ const BenefitsManagement = () => {
             <div style={{ fontWeight: '500' }}>{emp.name}</div>
             <div style={{ fontSize: '11px', color: '#7f8c8d' }}>{emp.employee_id}</div>
             <div style={{ fontSize: '11px', color: '#999' }}>{emp.department || 'No Dept'}</div>
-           </td>
+            <div style={{ fontSize: '10px', color: '#007bff', marginTop: '4px' }}>
+              ₱{hourlyRate.toFixed(2)}/hr (from payroll)
+            </div>
+          </td>
           <td style={{ padding: '12px', textAlign: 'center' }}>
             {employeeBenefits ? formatCurrency(employeeBenefits.sss_weekly) : '-'}
-           </td>
+          </td>
           <td style={{ padding: '12px', textAlign: 'center' }}>
             {employeeBenefits ? formatCurrency(employeeBenefits.philhealth_weekly) : '-'}
-           </td>
+          </td>
           <td style={{ padding: '12px', textAlign: 'center' }}>
             {employeeBenefits ? formatCurrency(employeeBenefits.pagibig_weekly) : '-'}
-           </td>
+          </td>
           <td style={{ padding: '12px', textAlign: 'center' }}>
             <span style={{ fontWeight: 'bold', color: '#28a745' }}>
               {employeeBenefits ? formatCurrency(total) : '-'}
             </span>
-           </td>
+          </td>
           <td style={{ padding: '12px', textAlign: 'center' }}>
             <button 
               style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
@@ -936,7 +1017,7 @@ const BenefitsManagement = () => {
             >
               {employeeBenefits ? 'Edit' : 'Setup'}
             </button>
-           </td>
+          </td>
         </tr>
       );
     });
@@ -1091,7 +1172,7 @@ const BenefitsManagement = () => {
   };
   
   // ============================================
-  // LOAD SETTINGS ON MOUNT
+  // LOAD SETTINGS AND PAYROLL RATES ON MOUNT
   // ============================================
   
   useEffect(() => {
@@ -1111,9 +1192,10 @@ const BenefitsManagement = () => {
     
     loadSettings();
     fetchData(false, abortController.signal);
+    fetchPayrollRates();
     
     return () => abortController.abort();
-  }, [fetchData]);
+  }, [fetchData, fetchPayrollRates]);
   
   // ============================================
   // STYLES
@@ -1133,10 +1215,47 @@ const BenefitsManagement = () => {
     btnInfo: { padding: '8px 16px', background: '#17a2b8', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: '13px' },
     errorBox: { background: '#f8d7da', color: '#721c24', padding: '12px', borderRadius: 6, marginBottom: 20, border: '1px solid #f5c6cb' },
     successBox: { background: '#d4edda', color: '#155724', padding: '12px', borderRadius: 6, marginBottom: 20, border: '1px solid #c3e6cb' },
-    overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1050 },
-    modal: { background: '#fff', padding: 25, borderRadius: 10, width: 950, maxHeight: '80vh', overflowY: 'auto' },
-    settingsModal: { background: '#fff', padding: 30, borderRadius: 12, width: 700, maxWidth: '95%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' },
-    bracketModal: { background: '#fff', padding: 35, borderRadius: 12, width: 1300, maxWidth: '95%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' },
+    overlay: { 
+      position: 'fixed', 
+      inset: 0, 
+      background: 'rgba(0,0,0,0.5)', 
+      display: 'flex', 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      zIndex: 1050,
+      overflow: 'auto',
+      padding: '20px'
+    },
+    modal: { 
+      background: '#fff', 
+      padding: 25, 
+      borderRadius: 10, 
+      width: '90%', 
+      maxWidth: '950px', 
+      maxHeight: '85vh', 
+      overflowY: 'auto' 
+    },
+    settingsModal: { 
+      background: '#fff', 
+      padding: 30, 
+      borderRadius: 12, 
+      width: '90%', 
+      maxWidth: '700px', 
+      maxHeight: '90vh', 
+      overflowY: 'auto', 
+      boxShadow: '0 10px 40px rgba(0,0,0,0.2)' 
+    },
+    bracketModal: { 
+      background: '#fff', 
+      padding: 25, 
+      borderRadius: 12, 
+      width: '95%', 
+      maxWidth: '1200px', 
+      maxHeight: '90vh', 
+      overflowY: 'auto', 
+      boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
+      position: 'relative'
+    },
     infoBox: { background: '#f8f9fa', padding: '12px', borderRadius: 5, marginBottom: 15, border: '1px solid #eee', fontSize: '13px' },
     previewBox: { background: '#e7f3ff', padding: '15px', borderRadius: 8, marginTop: 15, border: '1px solid #b8daff' }
   };
@@ -1153,15 +1272,31 @@ const BenefitsManagement = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h2 style={{ margin: 0, color: '#2c3e50', fontSize: '24px' }}>Benefits Management</h2>
         <div>
-          <button style={{ ...btnSecondary, marginRight: '10px' }} onClick={() => fetchData(true)}>
+          <button style={{ ...btnSecondary, marginRight: '10px' }} onClick={() => { fetchData(true); fetchPayrollRates(); }}>
             <i className="bi bi-arrow-clockwise"></i> Refresh
           </button>
           <button style={{ ...btnInfo, marginRight: '10px' }} onClick={() => setShowSettingsModal(true)}>
             <i className="bi bi-gear"></i> Settings
           </button>
-          <button style={btnPrimary} onClick={() => setShowBracketEditor(true)}>
+          <button style={btnPrimary} onClick={() => openBracketEditor()}>
             <i className="bi bi-table"></i> SSS Brackets
           </button>
+        </div>
+      </div>
+      
+      {/* Payroll Rate Info Bar */}
+      <div style={{ background: '#e3f2fd', padding: '10px 15px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #b8daff' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <i className="bi bi-calculator" style={{ marginRight: '8px', color: '#007bff' }}></i>
+            <strong>Hourly Rates Source:</strong> Payroll records for week {currentWeekRange.start} to {currentWeekRange.end}
+            {loadingRates && <span className="ms-2 text-muted">(Loading rates...)</span>}
+          </div>
+          <div>
+            <small className="text-muted">
+              {payrollRates.size} employee rates loaded
+            </small>
+          </div>
         </div>
       </div>
       
@@ -1279,11 +1414,31 @@ const BenefitsManagement = () => {
       
       {/* Benefits Modal */}
       {showModal && selectedEmployee && (
-        <div style={overlay}>
-          <div style={{ ...modal, width: '900px' }}>
-            <h3 style={{ marginBottom: '20px', fontSize: '18px' }}>
-              {benefitsMap.get(selectedEmployee.employee_id) ? 'Edit Benefits' : 'Setup Benefits'} for {selectedEmployee.name}
-            </h3>
+        <div style={overlay} onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setShowModal(false);
+            setSelectedEmployee(null);
+            setValidationError('');
+            setSuccessMessage('');
+          }
+        }}>
+          <div style={modal}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px' }}>
+                {benefitsMap.get(selectedEmployee.employee_id) ? 'Edit Benefits' : 'Setup Benefits'} for {selectedEmployee.name}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowModal(false);
+                  setSelectedEmployee(null);
+                  setValidationError('');
+                  setSuccessMessage('');
+                }}
+                style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' }}
+              >
+                &times;
+              </button>
+            </div>
             
             {successMessage && (
               <div style={successBox}>
@@ -1304,11 +1459,12 @@ const BenefitsManagement = () => {
                 <div><strong>ID:</strong> {selectedEmployee.employee_id}</div>
                 <div><strong>Department:</strong> {selectedEmployee.department || 'Not assigned'}</div>
                 <div><strong>Work Schedule:</strong> {workDaysPerWeek} days/week, {companySettings?.standard_work_hours || 8} hours/day</div>
+                <div><strong>Hourly Rate (from payroll):</strong> {formatCurrency(getEmployeeHourlyRate(selectedEmployee.employee_id))}/hr</div>
                 <div><strong>Weekly Salary:</strong> {employeeWeeklySalary > 0 ? formatCurrency(employeeWeeklySalary) : 'Not set'}</div>
                 <div><strong>Monthly Salary (DOLE):</strong> {employeeWeeklySalary > 0 ? formatCurrency(getDOLEMonthlySalary(employeeWeeklySalary)) : 'Not set'}</div>
                 {employeeWeeklySalary === 0 && (
                   <div style={{ fontSize: '12px', color: '#ffc107', marginTop: '5px' }}>
-                    ⚠️ No salary found. Please set hourly rate for this employee first.
+                    ⚠️ No salary found. Please set hourly rate in payroll first.
                   </div>
                 )}
               </div>
@@ -1403,9 +1559,9 @@ const BenefitsManagement = () => {
                 </div>
               </div>
               
-              <div style={{ display: 'flex', gap: 10, marginTop: '25px' }}>
-                <button type="button" style={{ ...btnSecondary, padding: '10px 20px' }} onClick={() => { setShowModal(false); setSelectedEmployee(null); setValidationError(''); setSuccessMessage(''); }}>Cancel</button>
-                <button type="submit" style={{ ...btnPrimary, padding: '10px 20px' }} disabled={saving}>
+              <div style={{ display: 'flex', gap: 10, marginTop: '25px', justifyContent: 'flex-end' }}>
+                <button type="button" style={btnSecondary} onClick={() => { setShowModal(false); setSelectedEmployee(null); setValidationError(''); setSuccessMessage(''); }}>Cancel</button>
+                <button type="submit" style={btnPrimary} disabled={saving}>
                   {saving ? 'Saving...' : (benefitsMap.get(selectedEmployee.employee_id) ? 'Update Benefits' : 'Save Benefits')}
                 </button>
               </div>
@@ -1414,20 +1570,283 @@ const BenefitsManagement = () => {
         </div>
       )}
       
-      {/* Settings Modal - keep your existing code */}
+      {/* Settings Modal */}
       {showSettingsModal && (
-        <div style={overlay}>
+        <div style={overlay} onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setShowSettingsModal(false);
+          }
+        }}>
           <div style={settingsModal}>
-            {/* ... your existing settings modal code ... */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px' }}>SSS Bracket Generation Settings</h3>
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' }}
+              >
+                &times;
+              </button>
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
+              <div>
+                <label>Min Salary Start</label>
+                <input type="number" name="min_salary_start" value={bracketSettings.min_salary_start} onChange={handleSettingsChange} style={input} />
+              </div>
+              <div>
+                <label>Max Salary End</label>
+                <input type="number" name="max_salary_end" value={bracketSettings.max_salary_end} onChange={handleSettingsChange} style={input} />
+              </div>
+              <div>
+                <label>Bracket Interval</label>
+                <input type="number" name="bracket_interval" value={bracketSettings.bracket_interval} onChange={handleSettingsChange} style={input} />
+              </div>
+              <div>
+                <label>MSC Start</label>
+                <input type="number" name="msc_start" value={bracketSettings.msc_start} onChange={handleSettingsChange} style={input} />
+              </div>
+              <div>
+                <label>MSC Increment</label>
+                <input type="number" name="msc_increment" value={bracketSettings.msc_increment} onChange={handleSettingsChange} style={input} />
+              </div>
+              <div>
+                <label>Regular MSC Cap</label>
+                <input type="number" name="regular_msc_cap" value={bracketSettings.regular_msc_cap} onChange={handleSettingsChange} style={input} />
+              </div>
+              <div>
+                <label>EC Standard (below threshold)</label>
+                <input type="number" name="ec_standard" value={bracketSettings.ec_standard} onChange={handleSettingsChange} style={input} step="0.01" />
+              </div>
+              <div>
+                <label>EC Elevated (above threshold)</label>
+                <input type="number" name="ec_elevated" value={bracketSettings.ec_elevated} onChange={handleSettingsChange} style={input} step="0.01" />
+              </div>
+              <div>
+                <label>EC Threshold</label>
+                <input type="number" name="ec_threshold" value={bracketSettings.ec_threshold} onChange={handleSettingsChange} style={input} />
+              </div>
+              <div>
+                <label>Employee SS Percentage (%)</label>
+                <input type="number" name="employee_ss_percentage" value={bracketSettings.employee_ss_percentage} onChange={handleSettingsChange} style={input} step="0.1" />
+              </div>
+              <div>
+                <label>Employer SS Percentage (%)</label>
+                <input type="number" name="employer_ss_percentage" value={bracketSettings.employer_ss_percentage} onChange={handleSettingsChange} style={input} step="0.1" />
+              </div>
+              <div>
+                <label>Employee MPF Percentage (%)</label>
+                <input type="number" name="employee_mpf_percentage" value={bracketSettings.employee_mpf_percentage} onChange={handleSettingsChange} style={input} step="0.1" />
+              </div>
+              <div>
+                <label>Employer MPF Percentage (%)</label>
+                <input type="number" name="employer_mpf_percentage" value={bracketSettings.employer_mpf_percentage} onChange={handleSettingsChange} style={input} step="0.1" />
+              </div>
+            </div>
+            
+            <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button style={btnSecondary} onClick={() => setShowSettingsModal(false)}>Cancel</button>
+              <button style={btnPrimary} onClick={saveSettings}>Save Settings</button>
+              <button style={btnInfo} onClick={resetToSSSDefaults}>Reset to SSS Defaults</button>
+              <button style={btnSuccess} onClick={generateSSSBrackets} disabled={generatingBrackets}>
+                {generatingBrackets ? 'Generating...' : 'Generate SSS Brackets'}
+              </button>
+              {sssBrackets.length > 0 && (
+                <button style={btnDanger} onClick={deleteAllBrackets} disabled={deleteAllLoading}>
+                  {deleteAllLoading ? 'Deleting...' : `Delete All (${sssBrackets.length})`}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
       
-      {/* Bracket Editor Modal - keep your existing code */}
+      {/* Bracket Editor Modal */}
       {showBracketEditor && (
-        <div style={overlay}>
+        <div style={overlay} onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setShowBracketEditor(false);
+            resetBracketForm();
+          }
+        }}>
           <div style={bracketModal}>
-            {/* ... your existing bracket editor code ... */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px' }}>
+                {editingBracket ? 'Edit SSS Bracket' : 'Add New SSS Bracket'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowBracketEditor(false);
+                  resetBracketForm();
+                }}
+                style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' }}
+              >
+                &times;
+              </button>
+            </div>
+            
+            {validationError && (
+              <div style={errorBox}>
+                <i className="bi bi-exclamation-triangle-fill me-2"></i>
+                {validationError}
+              </div>
+            )}
+            
+            <form onSubmit={saveBracket}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Min Salary (₱)</label>
+                  <input 
+                    type="number" 
+                    name="min_salary" 
+                    value={bracketForm.min_salary} 
+                    onChange={handleBracketChange} 
+                    style={input} 
+                    step="0.01" 
+                    required 
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Max Salary (₱)</label>
+                  <input 
+                    type="number" 
+                    name="max_salary" 
+                    value={bracketForm.max_salary} 
+                    onChange={handleBracketChange} 
+                    style={input} 
+                    step="0.01" 
+                    required 
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Monthly Credit (MSC) (₱)</label>
+                  <input 
+                    type="number" 
+                    name="monthly_credit" 
+                    value={bracketForm.monthly_credit} 
+                    onChange={handleBracketChange} 
+                    style={input} 
+                    step="0.01" 
+                    required 
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Employee SS %</label>
+                  <input 
+                    type="number" 
+                    name="employee_ss_percentage" 
+                    value={bracketForm.employee_ss_percentage} 
+                    onChange={handleBracketChange} 
+                    style={input} 
+                    step="0.1" 
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Employer SS %</label>
+                  <input 
+                    type="number" 
+                    name="employer_ss_percentage" 
+                    value={bracketForm.employer_ss_percentage} 
+                    onChange={handleBracketChange} 
+                    style={input} 
+                    step="0.1" 
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Employee MPF %</label>
+                  <input 
+                    type="number" 
+                    name="employee_mpf_percentage" 
+                    value={bracketForm.employee_mpf_percentage} 
+                    onChange={handleBracketChange} 
+                    style={input} 
+                    step="0.1" 
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Employer MPF %</label>
+                  <input 
+                    type="number" 
+                    name="employer_mpf_percentage" 
+                    value={bracketForm.employer_mpf_percentage} 
+                    onChange={handleBracketChange} 
+                    style={input} 
+                    step="0.1" 
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>EC Amount (₱)</label>
+                  <input 
+                    type="number" 
+                    name="ec_amount" 
+                    value={bracketForm.ec_amount} 
+                    onChange={handleBracketChange} 
+                    style={input} 
+                    step="0.01" 
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Status</label>
+                  <label style={{ display: 'flex', alignItems: 'center' }}>
+                    <input 
+                      type="checkbox" 
+                      name="is_active" 
+                      checked={bracketForm.is_active} 
+                      onChange={handleBracketChange} 
+                      style={{ marginRight: '8px' }} 
+                    />
+                    Active
+                  </label>
+                </div>
+              </div>
+              
+              <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button 
+                  type="button" 
+                  style={btnSecondary} 
+                  onClick={() => { 
+                    setShowBracketEditor(false); 
+                    resetBracketForm(); 
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  style={btnPrimary} 
+                  disabled={saving}
+                >
+                  {saving ? 'Saving...' : (editingBracket ? 'Update Bracket' : 'Add Bracket')}
+                </button>
+              </div>
+            </form>
+            
+            {sssBrackets.length > 0 && (
+              <>
+                <hr style={{ margin: '20px 0' }} />
+                <h4 style={{ fontSize: '16px', marginBottom: '15px' }}>Existing SSS Brackets</h4>
+                <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                  <table style={table}>
+                    <thead style={{ position: 'sticky', top: 0, background: '#f8f9fa' }}>
+                      <tr>
+                        <th style={th}>#</th>
+                        <th style={th}>Min Salary</th>
+                        <th style={th}>Max Salary</th>
+                        <th style={th}>MSC</th>
+                        <th style={th}>Base</th>
+                        <th style={th}>Employee</th>
+                        <th style={th}>Employer</th>
+                        <th style={th}>EC</th>
+                        <th style={th}>Status</th>
+                        <th style={th}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {renderBracketRows()}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
