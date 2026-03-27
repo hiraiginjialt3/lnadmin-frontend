@@ -1,5 +1,5 @@
-// src/utils/archivedLogger.js
 import LZString from 'lz-string';
+import { API_BASE_URL } from '../config';
 
 const ARCHIVED_CONFIG = {
   STORAGE_KEYS: {
@@ -12,7 +12,10 @@ const ARCHIVED_CONFIG = {
 };
 
 // API Configuration
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_URL = API_BASE_URL 
+  ? `${API_BASE_URL}/api` 
+  : 'http://localhost:5000/api';
+
 
 /**
  * Get auth token from localStorage

@@ -41,6 +41,18 @@ const AccountManagement = () => {
     face_image: null
   });
   
+  // Validation error states
+  const [validationErrors, setValidationErrors] = useState({
+    name: "",
+    email: "",
+    password: "",
+    contact_number: "",
+    birthday: "",
+    department: "",
+    role: "",
+    face_image: ""
+  });
+  
   // Camera states
   const [showCamera, setShowCamera] = useState(false);
   const [cameraStream, setCameraStream] = useState(null);
@@ -80,6 +92,164 @@ const AccountManagement = () => {
   const canCreateRole = (role) => {
     const availableRoles = getAvailableRoles();
     return availableRoles.includes(role);
+  };
+
+  // Validation functions
+  const validateName = (name) => {
+    if (!name || name.trim().length < 2) {
+      return "Name must be at least 2 characters long";
+    }
+    return "";
+  };
+
+  const validateEmail = (email) => {
+    if (!email) {
+      return "Email is required";
+    }
+    const emailLower = email.toLowerCase();
+    if (!emailLower.endsWith('@gmail.com') && !emailLower.endsWith('@yahoo.com')) {
+      return "Email must end with @gmail.com or @yahoo.com";
+    }
+    return "";
+  };
+
+  const validatePassword = (password) => {
+    if (!password) {
+      return "Password is required";
+    }
+    if (password.length < 8) {
+      return "Password must be at least 8 characters long";
+    }
+    return "";
+  };
+
+  const validateContactNumber = (contactNumber) => {
+    if (!contactNumber) return ""; // Optional field
+    const phoneRegex = /^09\d{9}$/;
+    if (!phoneRegex.test(contactNumber)) {
+      return "Contact number must be 11 digits starting with '09' (e.g., 09123456789)";
+    }
+    return "";
+  };
+
+  const validateBirthday = (birthday) => {
+    if (!birthday) return ""; // Optional field
+    
+    const birthDate = new Date(birthday);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    
+    if (age < 18) {
+      return "Employee must be at least 18 years old";
+    }
+    return "";
+  };
+
+  const validateDepartment = (department) => {
+    if (!department) {
+      return "Department is required";
+    }
+    return "";
+  };
+
+  const validateRole = (role) => {
+    if (!role) {
+      return "Role is required";
+    }
+    if (!canCreateRole(role)) {
+      return `You don't have permission to create ${role} accounts`;
+    }
+    return "";
+  };
+
+  const validateFaceImage = (faceImage) => {
+    if (!faceImage) {
+      return "Face recognition image is required for attendance system";
+    }
+    return "";
+  };
+
+  // Validate all fields before submission
+  const validateForm = () => {
+    const errors = {
+      name: validateName(newEmployee.name),
+      email: validateEmail(newEmployee.email),
+      password: validatePassword(newEmployee.password),
+      contact_number: validateContactNumber(newEmployee.contact_number),
+      birthday: validateBirthday(newEmployee.birthday),
+      department: validateDepartment(newEmployee.department),
+      role: validateRole(newEmployee.role),
+      face_image: validateFaceImage(newEmployee.face_image)
+    };
+    
+    setValidationErrors(errors);
+    
+    // Check if there are any errors
+    return !Object.values(errors).some(error => error !== "");
+  };
+
+  // Real-time validation for input fields
+  const validateField = (field, value) => {
+    let error = "";
+    switch(field) {
+      case 'name':
+        error = validateName(value);
+        break;
+      case 'email':
+        error = validateEmail(value);
+        break;
+      case 'password':
+        error = validatePassword(value);
+        break;
+      case 'contact_number':
+        error = validateContactNumber(value);
+        break;
+      case 'birthday':
+        error = validateBirthday(value);
+        break;
+      case 'department':
+        error = validateDepartment(value);
+        break;
+      case 'role':
+        error = validateRole(value);
+        break;
+      case 'face_image':
+        error = validateFaceImage(value);
+        break;
+      default:
+        break;
+    }
+    
+    setValidationErrors(prev => ({...prev, [field]: error}));
+    return error;
+  };
+
+  // Check if form is valid for button enable/disable
+  const isFormValid = () => {
+    // Check required fields
+    if (!newEmployee.name) return false;
+    if (!newEmployee.email) return false;
+    if (!newEmployee.password || newEmployee.password.length < 8) return false;
+    if (!newEmployee.department) return false;
+    if (!newEmployee.face_image) return false;
+    if (!canCreateRole(newEmployee.role)) return false;
+    
+    // Check validation errors
+    if (validationErrors.name) return false;
+    if (validationErrors.email) return false;
+    if (validationErrors.password) return false;
+    if (validationErrors.contact_number) return false;
+    if (validationErrors.birthday) return false;
+    if (validationErrors.department) return false;
+    if (validationErrors.role) return false;
+    if (validationErrors.face_image) return false;
+    
+    return true;
   };
 
   // Cleanup camera on unmount
@@ -151,6 +321,7 @@ const AccountManagement = () => {
         
         setFacePreview(URL.createObjectURL(blob));
         setNewEmployee({...newEmployee, face_image: file});
+        validateField('face_image', file);
         
         stopCamera();
         setCapturing(false);
@@ -162,6 +333,7 @@ const AccountManagement = () => {
   const retakePhoto = () => {
     setFacePreview(null);
     setNewEmployee({...newEmployee, face_image: null});
+    validateField('face_image', null);
     setShowCamera(true);
   };
 
@@ -486,6 +658,7 @@ const AccountManagement = () => {
     if (file) {
       setFacePreview(URL.createObjectURL(file));
       setNewEmployee({...newEmployee, face_image: file});
+      validateField('face_image', file);
       setShowCamera(false);
     }
   };
@@ -497,7 +670,9 @@ const AccountManagement = () => {
   };
 
   const handleDepartmentChange = (e) => {
-    setNewEmployee({...newEmployee, department: e.target.value});
+    const value = e.target.value;
+    setNewEmployee({...newEmployee, department: value});
+    validateField('department', value);
   };
 
   const handleRoleChange = (e) => {
@@ -507,50 +682,56 @@ const AccountManagement = () => {
       return;
     }
     setNewEmployee({...newEmployee, role: selectedRole});
+    validateField('role', selectedRole);
+  };
+
+  const handleNameChange = (e) => {
+    const value = e.target.value;
+    setNewEmployee({...newEmployee, name: value});
+    validateField('name', value);
+  };
+
+  const handleEmailChange = (e) => {
+    const value = e.target.value;
+    setNewEmployee({...newEmployee, email: value});
+    validateField('email', value);
+  };
+
+  const handlePasswordChange = (e) => {
+    const value = e.target.value;
+    setNewEmployee({...newEmployee, password: value});
+    validateField('password', value);
+  };
+
+  const handleContactNumberChange = (e) => {
+    const value = e.target.value;
+    setNewEmployee({...newEmployee, contact_number: value});
+    validateField('contact_number', value);
+  };
+
+  const handleBirthdayChange = (e) => {
+    const value = e.target.value;
+    setNewEmployee({...newEmployee, birthday: value});
+    validateField('birthday', value);
   };
 
   const handleCreateEmployee = async () => {
     scrollToTop();
     
-    if (!canCreateRole(newEmployee.role)) {
-      showAlert("danger", `You don't have permission to create ${newEmployee.role} accounts.`, true);
+    // Validate all fields
+    if (!validateForm()) {
+      // Show first error message
+      const firstError = Object.values(validationErrors).find(error => error !== "");
+      if (firstError) {
+        showAlert("warning", firstError, true);
+      }
       return;
     }
     
-    if (!newEmployee.name) {
-      showAlert("warning", "Name is required!", true);
-      return;
-    }
-
-    if (!newEmployee.email) {
-      showAlert("warning", "Email is required for employee login!", true);
-      return;
-    }
-
-    if (!newEmployee.password) {
-      showAlert("warning", "Password is required for employee login!", true);
-      return;
-    }
-
-    if (newEmployee.password.length < 8) {
-      showAlert("warning", "Password must be at least 8 characters long!", true);
-      return;
-    }
-
-    if (!newEmployee.department) {
-      showAlert("warning", "Department is required!", true);
-      return;
-    }
-
-    if (!newEmployee.face_image) {
-      showAlert("warning", "Face recognition image is required for attendance system!", true);
-      return;
-    }
-
     try {
       const formData = new FormData();
-      formData.append('name', newEmployee.name);
-      formData.append('email', newEmployee.email);
+      formData.append('name', newEmployee.name.trim());
+      formData.append('email', newEmployee.email.toLowerCase());
       formData.append('password', newEmployee.password);
       formData.append('role', newEmployee.role);
       formData.append('department', newEmployee.department);
@@ -604,6 +785,18 @@ const AccountManagement = () => {
       setFacePreview(null);
       setGeneratedIdPreview("");
       setShowPassword(false);
+      
+      // Reset validation errors
+      setValidationErrors({
+        name: "",
+        email: "",
+        password: "",
+        contact_number: "",
+        birthday: "",
+        department: "",
+        role: "",
+        face_image: ""
+      });
       
       setView("status");
       fetchEmployees();
@@ -1205,12 +1398,15 @@ const AccountManagement = () => {
                       </label>
                       <input 
                         type="text" 
-                        className="form-control"
+                        className={`form-control ${validationErrors.name ? 'is-invalid' : ''}`}
                         value={newEmployee.name}
-                        onChange={(e) => setNewEmployee({...newEmployee, name: e.target.value})}
+                        onChange={handleNameChange}
                         placeholder="e.g., Juan Dela Cruz"
                         required
                       />
+                      {validationErrors.name && (
+                        <div className="invalid-feedback">{validationErrors.name}</div>
+                      )}
                     </div>
 
                     {/* Email */}
@@ -1222,12 +1418,15 @@ const AccountManagement = () => {
                       </label>
                       <input 
                         type="email" 
-                        className="form-control"
+                        className={`form-control ${validationErrors.email ? 'is-invalid' : ''}`}
                         value={newEmployee.email}
-                        onChange={(e) => setNewEmployee({...newEmployee, email: e.target.value})}
+                        onChange={handleEmailChange}
                         placeholder="e.g., juan.delacruz@gmail.com"
                         required
                       />
+                      {validationErrors.email && (
+                        <div className="invalid-feedback">{validationErrors.email}</div>
+                      )}
                       <small className="text-muted">Must end with @gmail.com or @yahoo.com</small>
                     </div>
 
@@ -1241,9 +1440,9 @@ const AccountManagement = () => {
                       <div className="input-group">
                         <input 
                           type={showPassword ? 'text' : 'password'}
-                          className="form-control"
+                          className={`form-control ${validationErrors.password ? 'is-invalid' : ''}`}
                           value={newEmployee.password}
-                          onChange={(e) => setNewEmployee({...newEmployee, password: e.target.value})}
+                          onChange={handlePasswordChange}
                           placeholder="Enter password (min. 8 characters)"
                           required
                           minLength="8"
@@ -1257,6 +1456,9 @@ const AccountManagement = () => {
                           <i className={`bi ${showPassword ? 'bi-eye-slash' : 'bi-eye'}`}></i>
                         </button>
                       </div>
+                      {validationErrors.password && (
+                        <div className="invalid-feedback d-block">{validationErrors.password}</div>
+                      )}
                       <small className="text-muted">Minimum 8 characters long</small>
                     </div>
 
@@ -1269,12 +1471,15 @@ const AccountManagement = () => {
                       </label>
                       <input 
                         type="text" 
-                        className="form-control"
+                        className={`form-control ${validationErrors.contact_number ? 'is-invalid' : ''}`}
                         value={newEmployee.contact_number}
-                        onChange={(e) => setNewEmployee({...newEmployee, contact_number: e.target.value})}
+                        onChange={handleContactNumberChange}
                         placeholder="e.g., 09123456789"
                         maxLength="11"
                       />
+                      {validationErrors.contact_number && (
+                        <div className="invalid-feedback">{validationErrors.contact_number}</div>
+                      )}
                       <small className="text-muted">Must be 11 digits starting with '09'</small>
                     </div>
 
@@ -1312,7 +1517,7 @@ const AccountManagement = () => {
                         Role *
                       </label>
                       <select 
-                        className="form-select"
+                        className={`form-select ${validationErrors.role ? 'is-invalid' : ''}`}
                         value={newEmployee.role}
                         onChange={handleRoleChange}
                       >
@@ -1320,6 +1525,9 @@ const AccountManagement = () => {
                           <option key={role} value={role}>{role}</option>
                         ))}
                       </select>
+                      {validationErrors.role && (
+                        <div className="invalid-feedback">{validationErrors.role}</div>
+                      )}
                       {user?.role !== 'Admin' && (
                         <small className="text-muted">
                           {availableRoles.includes('Admin') ? 'You can create Admin accounts' : 'Admin accounts can only be created by Administrators'}
@@ -1334,7 +1542,7 @@ const AccountManagement = () => {
                         Department *
                       </label>
                       <select 
-                        className="form-select"
+                        className={`form-select ${validationErrors.department ? 'is-invalid' : ''}`}
                         value={newEmployee.department}
                         onChange={handleDepartmentChange}
                       >
@@ -1358,6 +1566,9 @@ const AccountManagement = () => {
                           </>
                         )}
                       </select>
+                      {validationErrors.department && (
+                        <div className="invalid-feedback">{validationErrors.department}</div>
+                      )}
                       <small className="text-muted">
                         Departments loaded from MongoDB: {departments.length} found
                       </small>
@@ -1372,11 +1583,14 @@ const AccountManagement = () => {
                       </label>
                       <input 
                         type="date" 
-                        className="form-control"
+                        className={`form-control ${validationErrors.birthday ? 'is-invalid' : ''}`}
                         value={newEmployee.birthday}
-                        onChange={(e) => setNewEmployee({...newEmployee, birthday: e.target.value})}
+                        onChange={handleBirthdayChange}
                         max={new Date().toISOString().split('T')[0]}
                       />
+                      {validationErrors.birthday && (
+                        <div className="invalid-feedback">{validationErrors.birthday}</div>
+                      )}
                       <small className="text-muted">Must be 18+ years old</small>
                     </div>
 
@@ -1388,6 +1602,12 @@ const AccountManagement = () => {
                         <span className="text-danger"> (Required for attendance)</span>
                       </label>
                       
+                      {validationErrors.face_image && !facePreview && !showCamera && (
+                        <div className="alert alert-danger py-2 mb-2">
+                          <i className="bi bi-exclamation-triangle me-2"></i>
+                          {validationErrors.face_image}
+                        </div>
+                      )}
 
                       {/* Hidden file input */}
                       <input
@@ -1523,7 +1743,7 @@ const AccountManagement = () => {
 
                       {/* No image selected message */}
                       {!facePreview && !showCamera && (
-                        <div className="alert alert-secondary py-3 text-center mb-0">
+                        <div className={`alert ${validationErrors.face_image ? 'alert-danger' : 'alert-secondary'} py-3 text-center mb-0`}>
                           <i className="bi bi-camera fs-1 d-block mb-2"></i>
                           <p className="mb-0">No face image selected yet.</p>
                           <small className="text-muted">
@@ -1555,6 +1775,16 @@ const AccountManagement = () => {
                       setFacePreview(null);
                       setGeneratedIdPreview("");
                       setShowPassword(false);
+                      setValidationErrors({
+                        name: "",
+                        email: "",
+                        password: "",
+                        contact_number: "",
+                        birthday: "",
+                        department: "",
+                        role: "",
+                        face_image: ""
+                      });
                       stopCamera();
                     }}
                     disabled={extractingFeatures}
@@ -1564,16 +1794,7 @@ const AccountManagement = () => {
                   <button 
                     className="btn btn-primary"
                     onClick={handleCreateEmployee}
-                    disabled={
-                      !newEmployee.name || 
-                      !newEmployee.email ||
-                      !newEmployee.password ||
-                      newEmployee.password.length < 8 ||
-                      !newEmployee.department || 
-                      !newEmployee.face_image || 
-                      extractingFeatures ||
-                      !canCreateRole(newEmployee.role)
-                    }
+                    disabled={!isFormValid() || extractingFeatures}
                   >
                     {extractingFeatures ? (
                       <>

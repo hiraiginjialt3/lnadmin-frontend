@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { getMongoDBAttendance, getTodayMongoDBAttendance } from "../services/api";
+import API from "../services/api";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
 
@@ -12,6 +13,9 @@ const Attendance = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(20);
+  
+  const [autoClockOutStatus, setAutoClockOutStatus] = useState(null);
+  const [attendanceSettings, setAttendanceSettings] = useState(null);
 
   const fetchAttendanceData = async () => {
     try {
@@ -40,23 +44,47 @@ const Attendance = () => {
     }
   };
 
+  const fetchAttendanceSettings = async () => {
+    try {
+      const response = await API.get('/attendance/settings');
+      if (response.data.success) {
+        setAttendanceSettings(response.data.settings);
+      }
+    } catch (error) {
+      console.error("Error fetching attendance settings:", error);
+    }
+  };
+
+  const fetchAutoClockOutStatus = async () => {
+    try {
+      const response = await API.get('/attendance/auto-clockout/status');
+      if (response.data.success) {
+        setAutoClockOutStatus(response.data);
+      }
+    } catch (error) {
+      console.error("Error fetching auto clock-out status:", error);
+    }
+  };
+
   useEffect(() => {
     fetchAttendanceData();
+    fetchAutoClockOutStatus();
+    fetchAttendanceSettings();
+    
+    const interval = setInterval(fetchAutoClockOutStatus, 60000);
+    return () => clearInterval(interval);
   }, [filterDate]);
 
-  // Filter attendance data based on search term
   const filteredData = attendanceData.filter(record =>
-    record.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    record.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     record.employee_id?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Pagination
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
 
-  // Format date for display
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
@@ -67,21 +95,46 @@ const Attendance = () => {
     });
   };
 
-  // Handle date filter change
   const handleDateChange = (e) => {
     setFilterDate(e.target.value);
-    setCurrentPage(1); // Reset to first page when filter changes
+    setCurrentPage(1);
   };
 
-  // Handle search
   const handleSearch = (e) => {
     setSearchTerm(e.target.value);
-    setCurrentPage(1); // Reset to first page when search changes
+    setCurrentPage(1);
   };
+
+  const getCurrentTime = () => {
+    const now = new Date();
+    return now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  };
+
+  const getEmployeesWhoForgotToClockOut = () => {
+    if (!autoClockOutStatus?.open_employees || !attendanceSettings) return [];
+    
+    const currentTime = getCurrentTime();
+    const clockOutStart = attendanceSettings.clock_out_start || '17:00';
+    
+    const currentMinutes = (timeStr) => {
+      const [hours, minutes] = timeStr.split(':');
+      return parseInt(hours) * 60 + parseInt(minutes);
+    };
+    
+    const currentTimeMinutes = currentMinutes(currentTime);
+    const clockOutStartMinutes = currentMinutes(clockOutStart);
+    
+    if (currentTimeMinutes >= clockOutStartMinutes) {
+      return autoClockOutStatus.open_employees;
+    }
+    
+    return [];
+  };
+
+  const employeesWhoForgot = getEmployeesWhoForgotToClockOut();
 
   return (
     <div className="container-fluid p-4">
-      {/* Page Title */}
       <div className="mb-4">
         <div className="d-flex justify-content-between align-items-center">
           <div>
@@ -95,6 +148,89 @@ const Attendance = () => {
           </Link>
         </div>
       </div>
+
+      {autoClockOutStatus && attendanceSettings && (
+        <div className="card border shadow-sm rounded-0 mb-4">
+          <div className={`card-header ${employeesWhoForgot.length > 0 ? 'bg-warning' : 'bg-light'} fw-semibold rounded-0`}>
+            <i className="bi bi-clock-history me-2"></i>
+            Auto Clock-Out System
+          </div>
+          <div className="card-body">
+            <div className="row">
+              {/* Column 1: Forgot to Clock Out */}
+              <div className="col-md-3 mb-3 mb-md-0 d-flex">
+                <div className="text-center p-2 w-100 d-flex flex-column justify-content-center align-items-center">
+                  <i className="bi bi-person-clock fs-4 text-warning"></i>
+                  <div className="fw-bold fs-5 mt-1">{employeesWhoForgot.length || 0}</div>
+                  <small className="text-muted">Forgot to Clock Out</small>
+                </div>
+              </div>
+              
+              {/* Column 2: Clock Out Start Time */}
+              <div className="col-md-3 mb-3 mb-md-0 d-flex">
+                <div className="text-center p-2 w-100 d-flex flex-column justify-content-center align-items-center">
+                  <i className="bi bi-clock fs-4 text-primary"></i>
+                  <div className="fw-bold fs-5 mt-1">{attendanceSettings.clock_out_start || '17:00'}</div>
+                  <small className="text-muted">Clock Out Start Time</small>
+                </div>
+              </div>
+              
+              {/* Column 3: Auto Clock-Out Time */}
+              <div className="col-md-3 mb-3 mb-md-0 d-flex">
+                <div className="text-center p-2 w-100 d-flex flex-column justify-content-center align-items-center">
+                  <i className="bi bi-hourglass-split fs-4 text-info"></i>
+                  <div className="fw-bold fs-5 mt-1">{autoClockOutStatus.auto_clock_out_time || '22:00'}</div>
+                  <small className="text-muted">Auto Clock-Out Time</small>
+                </div>
+              </div>
+              
+              {/* Column 4: Current Time */}
+              <div className="col-md-3 mb-3 mb-md-0 d-flex">
+                <div className="text-center p-2 w-100 d-flex flex-column justify-content-center align-items-center">
+                  <i className="bi bi-clock-history fs-4 text-secondary"></i>
+                  <div className="fw-bold fs-5 mt-1">{getCurrentTime()}</div>
+                  <small className="text-muted">Current Time</small>
+                </div>
+              </div>
+            </div>
+            
+            {/* Employees who forgot to clock out - only show if past clock_out_start */}
+            {employeesWhoForgot.length > 0 && (
+              <div className="mt-3">
+                <small className="text-muted d-block mb-2">
+                  <i className="bi bi-people me-1"></i>
+                  Employees who haven't clocked out after {attendanceSettings.clock_out_start || '17:00'}:
+                </small>
+                <div className="d-flex flex-wrap gap-2">
+                  {employeesWhoForgot.slice(0, 5).map((emp, idx) => (
+                    <span key={idx} className="badge bg-secondary">
+                      {emp.name} (Clocked in at {emp.clock_in_time})
+                    </span>
+                  ))}
+                  {employeesWhoForgot.length > 5 && (
+                    <span className="badge bg-info">
+                      +{employeesWhoForgot.length - 5} more
+                    </span>
+                  )}
+                </div>
+                <small className="text-muted d-block mt-2">
+                  <i className="bi bi-info-circle me-1"></i>
+                  These employees will be auto clocked-out at {autoClockOutStatus.auto_clock_out_time || '22:00'}
+                </small>
+              </div>
+            )}
+            
+            {employeesWhoForgot.length === 0 && autoClockOutStatus.open_records_count > 0 && (
+              <div className="mt-3">
+                <small className="text-muted d-block">
+                  <i className="bi bi-info-circle me-1"></i>
+                  {autoClockOutStatus.open_records_count} employee(s) haven't clocked out yet, but it's before {attendanceSettings.clock_out_start || '17:00'}
+                </small>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Today's Summary Cards */}
       {todayStats && (
@@ -233,6 +369,7 @@ const Attendance = () => {
                       <th>Status</th>
                       <th>Duration</th>
                       <th>Sync Status</th>
+                      <th>Auto Clock-Out</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -271,8 +408,11 @@ const Attendance = () => {
                           </td>
                           <td>
                             {record.clock_out_time ? (
-                              <span className="badge bg-danger">
+                              <span className={`badge ${record.auto_clocked_out ? 'bg-info' : 'bg-danger'}`}>
                                 {record.clock_out_time}
+                                {record.auto_clocked_out && (
+                                  <small className="ms-1">(Auto)</small>
+                                )}
                               </span>
                             ) : (
                               <span className="badge bg-warning">Still In</span>
@@ -295,6 +435,14 @@ const Attendance = () => {
                             }`}>
                               {record.sync_status || 'unknown'}
                             </span>
+                          </td>
+                          <td>
+                            {record.auto_clocked_out && (
+                              <span className="badge bg-info" title={record.auto_clock_out_reason}>
+                                <i className="bi bi-clock-history me-1"></i>
+                                Auto
+                              </span>
+                            )}
                           </td>
                         </tr>
                       );
@@ -326,7 +474,6 @@ const Attendance = () => {
                         (page >= currentPage - 2 && page <= currentPage + 2)
                       )
                       .map((page, index, array) => {
-                        // Add ellipsis
                         if (index > 0 && page - array[index - 1] > 1) {
                           return [
                             <li key={`ellipsis-${page}`} className="page-item disabled">
@@ -373,7 +520,6 @@ const Attendance = () => {
   );
 };
 
-// Add some custom CSS
 const styles = `
   .table th {
     font-weight: 600;

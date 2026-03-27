@@ -25,12 +25,10 @@
     "react-scripts": "^5.0.1"
   },
   "scripts": {
-    "start": "set DISABLE_ESLINT_PLUGIN=true && set HTTPS=false && set PORT=3000 && react-scripts start",
-    "build": "set DISABLE_ESLINT_PLUGIN=true && react-scripts build",
+    "start": "cross-env DISABLE_ESLINT_PLUGIN=true HTTPS=false PORT=3000 DANGEROUSLY_DISABLE_HOST_CHECK=true react-scripts start",
+    "build": "cross-env DISABLE_ESLINT_PLUGIN=true react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject",
-    "predeploy": "npm run build",
-    "deploy": "echo 'Deployment handled by Render'"
+    "eject": "react-scripts eject"
   },
   "eslintConfig": {
     "extends": [
@@ -51,5 +49,8 @@
     ]
   },
   "proxy": "http://localhost:5000",
-  "homepage": "."
+  "homepage": ".",
+  "devDependencies": {
+    "cross-env": "^10.1.0"
+  }
 }

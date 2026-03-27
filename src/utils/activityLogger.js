@@ -1,6 +1,7 @@
 // src/utils/activityLogger.js
 import { v4 as uuidv4 } from 'uuid';
 import LZString from 'lz-string';
+import { API_BASE_URL } from '../config';
 
 // ==================== CONFIGURATION ====================
 const ACTIVITY_CONFIG = {
@@ -24,7 +25,9 @@ const ACTIVITY_CONFIG = {
     DEBOUNCE_DELAY: 300
   },
   CATEGORIES: ['create', 'update', 'delete', 'maintenance', 'auth', 'other'],
-  API_URL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api'
+  API_URL: process.env.REACT_APP_API_URL 
+    ? `${process.env.REACT_APP_API_URL}/api` 
+    : 'http://localhost:5000/api'
 };
 
 // ==================== STATE MANAGEMENT ====================
