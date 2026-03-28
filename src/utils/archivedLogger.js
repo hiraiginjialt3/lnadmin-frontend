@@ -4,11 +4,6 @@ import { API_BASE_URL } from '../config';
 import LZString from 'lz-string';
 import { API_BASE_URL } from '../config';
 
-// ===== PUT DEBUG HERE =====
-console.log('API_BASE_URL value:', API_BASE_URL);
-console.log('Type of API_BASE_URL:', typeof API_BASE_URL);
-// ===== END DEBUG =====
-
 const ARCHIVED_CONFIG = {
   STORAGE_KEYS: {
     ARCHIVED: 'archived_activities'
@@ -19,23 +14,24 @@ const ARCHIVED_CONFIG = {
   }
 };
 
-// API Configuration
+// API Configuration – FIXED (handles both cases)
 const API_URL = (() => {
   if (!API_BASE_URL) {
     return 'http://localhost:5000/api';
   }
   
-  let base = API_BASE_URL.replace(/\/$/, '');
+  let base = API_BASE_URL.trim().replace(/\/+$/, '');
   
+  // If it already ends with /api, use it as-is
   if (base.endsWith('/api')) {
     return base;
   }
   
+  // Otherwise, add /api
   return `${base}/api`;
 })();
 
-console.log('FINAL API_URL:', API_URL);
-
+console.log('[ArchivedLogger] ✅ API_URL resolved to:', API_URL);
 
 /**
  * Get auth token from localStorage
