@@ -26,12 +26,12 @@ const AdminLeaveManagement = () => {
     employee_id: null,
     employee_name: null,
     employee_email: null,
-    personal_leave: 5,
-    sick_leave: 5,
-    emergency_leave: 5,
-    new_personal: 5,
-    new_sick: 5,
-    new_emergency: 5
+    personal_leave: 0,
+    sick_leave: 0,
+    emergency_leave: 0,
+    new_personal: 0,
+    new_sick: 0,
+    new_emergency: 0
   });
 
   useEffect(() => {
@@ -42,6 +42,30 @@ const AdminLeaveManagement = () => {
       fetchStats();
     }
   }, [activeTab, filter]);
+
+  // Function to fetch a single employee's latest balance
+  const fetchSingleEmployeeBalance = async (employeeId) => {
+    try {
+      console.log(`🔍 Fetching single balance for: ${employeeId}`);
+      const response = await API.get(`/leave/balance/${employeeId}`);
+      console.log(`📦 Response for ${employeeId}:`, response.data);
+      
+      if (response.data && response.data.success) {
+        const balances = response.data.balances;
+        console.log(`✅ Returning balances:`, balances);
+        return {
+          personal_leave: balances.personal_leave !== undefined ? balances.personal_leave : 0,
+          sick_leave: balances.sick_leave !== undefined ? balances.sick_leave : 0,
+          emergency_leave: balances.emergency_leave !== undefined ? balances.emergency_leave : 0
+        };
+      } else {
+        console.log(`⚠️ No success in response for ${employeeId}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error fetching balance for ${employeeId}:`, error);
+    }
+    return null;
+  };
 
   const fetchEmployees = async () => {
     setLoading(true);
@@ -54,17 +78,18 @@ const AdminLeaveManagement = () => {
       if (response.data.success) {
         const employeesList = response.data.employees || [];
         
-        // Fetch leave balances for each employee
+        // Fetch latest leave balances for each employee
         const employeesWithBalances = await Promise.all(
           employeesList.map(async (emp) => {
             try {
               const balanceResponse = await API.get(`/leave/balance/${emp.employee_id}`);
-              if (balanceResponse.data.success) {
+              if (balanceResponse.data && balanceResponse.data.success) {
+                const balances = balanceResponse.data.balances;
                 return {
                   ...emp,
-                  personal_leave: balanceResponse.data.balances.personal_leave,
-                  sick_leave: balanceResponse.data.balances.sick_leave,
-                  emergency_leave: balanceResponse.data.balances.emergency_leave
+                  personal_leave: balances.personal_leave !== undefined ? balances.personal_leave : 0,
+                  sick_leave: balances.sick_leave !== undefined ? balances.sick_leave : 0,
+                  emergency_leave: balances.emergency_leave !== undefined ? balances.emergency_leave : 0
                 };
               }
             } catch (error) {
@@ -89,6 +114,32 @@ const AdminLeaveManagement = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Function to refresh a specific employee's balance in the list
+  const refreshEmployeeBalance = async (employeeId) => {
+    try {
+      const balanceResponse = await API.get(`/leave/balance/${employeeId}`);
+      if (balanceResponse.data && balanceResponse.data.success) {
+        const balances = balanceResponse.data.balances;
+        setEmployees(prevEmployees => 
+          prevEmployees.map(emp => 
+            emp.employee_id === employeeId 
+              ? {
+                  ...emp,
+                  personal_leave: balances.personal_leave !== undefined ? balances.personal_leave : 0,
+                  sick_leave: balances.sick_leave !== undefined ? balances.sick_leave : 0,
+                  emergency_leave: balances.emergency_leave !== undefined ? balances.emergency_leave : 0
+                }
+              : emp
+          )
+        );
+        return true;
+      }
+    } catch (error) {
+      console.error(`Error refreshing balance for ${employeeId}:`, error);
+    }
+    return false;
   };
 
   const fetchLeaveRequests = async () => {
@@ -157,11 +208,14 @@ const AdminLeaveManagement = () => {
           if (response.data.success) {
             successCount++;
             results.push(`Personal: ${editBalanceModal.personal_leave} → ${editBalanceModal.new_personal}`);
+          } else {
+            errorCount++;
+            results.push(`Personal: Failed - ${response.data.message}`);
           }
         } catch (error) {
           errorCount++;
           console.error("Error updating personal leave:", error);
-          results.push(`Personal: Failed`);
+          results.push(`Personal: Failed - ${error.response?.data?.message || error.message}`);
         }
       }
       
@@ -177,11 +231,14 @@ const AdminLeaveManagement = () => {
           if (response.data.success) {
             successCount++;
             results.push(`Sick: ${editBalanceModal.sick_leave} → ${editBalanceModal.new_sick}`);
+          } else {
+            errorCount++;
+            results.push(`Sick: Failed - ${response.data.message}`);
           }
         } catch (error) {
           errorCount++;
           console.error("Error updating sick leave:", error);
-          results.push(`Sick: Failed`);
+          results.push(`Sick: Failed - ${error.response?.data?.message || error.message}`);
         }
       }
       
@@ -197,24 +254,41 @@ const AdminLeaveManagement = () => {
           if (response.data.success) {
             successCount++;
             results.push(`Emergency: ${editBalanceModal.emergency_leave} → ${editBalanceModal.new_emergency}`);
+          } else {
+            errorCount++;
+            results.push(`Emergency: Failed - ${response.data.message}`);
           }
         } catch (error) {
           errorCount++;
           console.error("Error updating emergency leave:", error);
-          results.push(`Emergency: Failed`);
+          results.push(`Emergency: Failed - ${error.response?.data?.message || error.message}`);
         }
       }
       
       if (successCount > 0) {
         alert(`✅ Successfully updated ${successCount} leave balance(s)\n${results.join('\n')}` + (errorCount > 0 ? `\n❌ ${errorCount} failed` : ''));
+        
+        // Close the modal
+        setEditBalanceModal({...editBalanceModal, show: false});
+        
+        // Wait a bit for backend to process
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Refresh the specific employee's balance
+        await refreshEmployeeBalance(editBalanceModal.employee_id);
+        
+        // Also refresh all employees to ensure consistency
+        await fetchEmployees();
+        
+        // If there are pending requests, refresh stats too
+        if (activeTab === 'requests') {
+          await fetchStats();
+        }
       } else if (errorCount > 0) {
-        alert(`❌ Failed to update ${errorCount} leave balance(s)`);
+        alert(`❌ Failed to update ${errorCount} leave balance(s)\n${results.join('\n')}`);
       } else {
         alert('No changes were made');
       }
-      
-      setEditBalanceModal({...editBalanceModal, show: false});
-      fetchEmployees();
       
     } catch (error) {
       console.error('Error in bulk update:', error);
@@ -242,8 +316,14 @@ const AdminLeaveManagement = () => {
         setSelectedRequest(null);
         setAdminNotes('');
         
+        // Refresh leave requests
         await fetchLeaveRequests();
         await fetchStats();
+        
+        // If the approved request had an employee, refresh their balance
+        if (selectedRequest && selectedRequest.employee_id) {
+          await refreshEmployeeBalance(selectedRequest.employee_id);
+        }
       }
     } catch (error) {
       console.error("Error approving request:", error);
@@ -271,8 +351,14 @@ const AdminLeaveManagement = () => {
         setSelectedRequest(null);
         setAdminNotes('');
         
+        // Refresh leave requests
         await fetchLeaveRequests();
         await fetchStats();
+        
+        // Refresh employee balance if needed (denied requests don't affect balance, but still refresh)
+        if (selectedRequest && selectedRequest.employee_id) {
+          await refreshEmployeeBalance(selectedRequest.employee_id);
+        }
       }
     } catch (error) {
       console.error("Error denying request:", error);
@@ -464,18 +550,18 @@ const AdminLeaveManagement = () => {
                             </td>
                             <td>{emp.department || 'N/A'}</td>
                             <td>
-                              <span className={`badge fs-6 p-2 ${emp.personal_leave < 2 ? 'bg-danger' : 'bg-info'}`}>
-                                {emp.personal_leave || 5} 
+                              <span className={`badge fs-6 p-2 ${emp.personal_leave === 0 ? 'bg-danger' : (emp.personal_leave < 2 ? 'bg-warning' : 'bg-success')}`}>
+                                {emp.personal_leave !== undefined ? emp.personal_leave : 0} 
                               </span>
                             </td>
                             <td>
-                              <span className={`badge fs-6 p-2 ${emp.sick_leave < 2 ? 'bg-danger' : 'bg-info'}`}>
-                                {emp.sick_leave || 5} 
+                              <span className={`badge fs-6 p-2 ${emp.sick_leave === 0 ? 'bg-danger' : (emp.sick_leave < 2 ? 'bg-warning' : 'bg-success')}`}>
+                                {emp.sick_leave !== undefined ? emp.sick_leave : 0} 
                               </span>
                             </td>
                             <td>
-                              <span className={`badge fs-6 p-2 ${emp.emergency_leave < 2 ? 'bg-danger' : 'bg-info'}`}>
-                                {emp.emergency_leave || 5}
+                              <span className={`badge fs-6 p-2 ${emp.emergency_leave === 0 ? 'bg-danger' : (emp.emergency_leave < 2 ? 'bg-warning' : 'bg-success')}`}>
+                                {emp.emergency_leave !== undefined ? emp.emergency_leave : 0}
                               </span>
                             </td>
                             <td>
@@ -486,19 +572,37 @@ const AdminLeaveManagement = () => {
                             <td>
                               <button 
                                 className="btn btn-sm btn-outline-primary"
-                                onClick={() => {
-                                  setEditBalanceModal({
-                                    show: true,
-                                    employee_id: emp.employee_id,
-                                    employee_name: emp.name,
-                                    employee_email: emp.email,
-                                    personal_leave: emp.personal_leave || 5,
-                                    sick_leave: emp.sick_leave || 5,
-                                    emergency_leave: emp.emergency_leave || 5,
-                                    new_personal: emp.personal_leave || 5,
-                                    new_sick: emp.sick_leave || 5,
-                                    new_emergency: emp.emergency_leave || 5
-                                  });
+                                onClick={async () => {
+                                  // Fetch latest balance before opening modal
+                                  const latestBalance = await fetchSingleEmployeeBalance(emp.employee_id);
+                                  if (latestBalance) {
+                                    setEditBalanceModal({
+                                      show: true,
+                                      employee_id: emp.employee_id,
+                                      employee_name: emp.name,
+                                      employee_email: emp.email,
+                                      personal_leave: latestBalance.personal_leave,
+                                      sick_leave: latestBalance.sick_leave,
+                                      emergency_leave: latestBalance.emergency_leave,
+                                      new_personal: latestBalance.personal_leave,
+                                      new_sick: latestBalance.sick_leave,
+                                      new_emergency: latestBalance.emergency_leave
+                                    });
+                                  } else {
+                                    // Fallback to current state if fetch fails
+                                    setEditBalanceModal({
+                                      show: true,
+                                      employee_id: emp.employee_id,
+                                      employee_name: emp.name,
+                                      employee_email: emp.email,
+                                      personal_leave: emp.personal_leave !== undefined ? emp.personal_leave : 0,
+                                      sick_leave: emp.sick_leave !== undefined ? emp.sick_leave : 0,
+                                      emergency_leave: emp.emergency_leave !== undefined ? emp.emergency_leave : 0,
+                                      new_personal: emp.personal_leave !== undefined ? emp.personal_leave : 0,
+                                      new_sick: emp.sick_leave !== undefined ? emp.sick_leave : 0,
+                                      new_emergency: emp.emergency_leave !== undefined ? emp.emergency_leave : 0
+                                    });
+                                  }
                                 }}
                               >
                                 <i className="bi bi-pencil-square"></i> Edit All Balances
@@ -781,20 +885,22 @@ const AdminLeaveManagement = () => {
                                     className="btn btn-sm btn-outline-primary mt-1"
                                     onClick={async () => {
                                       try {
-                                        const balanceResponse = await API.get(`/leave/balance/${request.employee_id}`);
-                                        if (balanceResponse.data.success) {
+                                        const latestBalance = await fetchSingleEmployeeBalance(request.employee_id);
+                                        if (latestBalance) {
                                           setEditBalanceModal({
                                             show: true,
                                             employee_id: request.employee_id,
                                             employee_name: request.employee_name,
                                             employee_email: request.employee_email,
-                                            personal_leave: balanceResponse.data.balances.personal_leave,
-                                            sick_leave: balanceResponse.data.balances.sick_leave,
-                                            emergency_leave: balanceResponse.data.balances.emergency_leave,
-                                            new_personal: balanceResponse.data.balances.personal_leave,
-                                            new_sick: balanceResponse.data.balances.sick_leave,
-                                            new_emergency: balanceResponse.data.balances.emergency_leave
+                                            personal_leave: latestBalance.personal_leave,
+                                            sick_leave: latestBalance.sick_leave,
+                                            emergency_leave: latestBalance.emergency_leave,
+                                            new_personal: latestBalance.personal_leave,
+                                            new_sick: latestBalance.sick_leave,
+                                            new_emergency: latestBalance.emergency_leave
                                           });
+                                        } else {
+                                          alert('Could not fetch current balance');
                                         }
                                       } catch (error) {
                                         alert('Could not fetch current balance');
@@ -888,15 +994,23 @@ const AdminLeaveManagement = () => {
                       <div className="mb-4">
                         <label className="form-label text-muted fw-bold">CURRENT BALANCE</label>
                         <div className="d-flex align-items-center">
-                          <span className="display-3 fw-bold me-3">{editBalanceModal.personal_leave}</span>
+                          <span className={`display-3 fw-bold me-3 ${editBalanceModal.personal_leave === 0 ? 'text-danger' : ''}`}>
+                            {editBalanceModal.personal_leave}
+                          </span>
                           <span className="text-muted fs-4">days</span>
                         </div>
                         <div className="progress mt-3" style={{ height: '10px' }}>
                           <div 
-                            className={`progress-bar ${editBalanceModal.personal_leave > 5 ? 'bg-primary' : (editBalanceModal.personal_leave < 2 ? 'bg-danger' : 'bg-warning')}`} 
+                            className={`progress-bar ${editBalanceModal.personal_leave === 0 ? 'bg-danger' : (editBalanceModal.personal_leave > 5 ? 'bg-primary' : (editBalanceModal.personal_leave < 2 ? 'bg-warning' : 'bg-success'))}`} 
                             style={{ width: `${Math.min((editBalanceModal.personal_leave) * 100, 100)}%` }}
                           ></div>
                         </div>
+                        {editBalanceModal.personal_leave === 0 && (
+                          <div className="mt-2 text-danger">
+                            <i className="bi bi-exclamation-triangle-fill me-1"></i>
+                            No remaining balance!
+                          </div>
+                        )}
                         {editBalanceModal.personal_leave > 5 && (
                           <div className="mt-2 text-primary">
                             <i className="bi bi-exclamation-circle me-1"></i>
@@ -910,7 +1024,7 @@ const AdminLeaveManagement = () => {
                         <div className="input-group">
                           <input 
                             type="number" 
-                            className="form-control form-control-lg text-center fw-bold"
+                            className={`form-control form-control-lg text-center fw-bold ${editBalanceModal.new_personal === 0 ? 'text-danger' : ''}`}
                             value={editBalanceModal.new_personal}
                             onChange={(e) => setEditBalanceModal({
                               ...editBalanceModal, 
@@ -946,15 +1060,23 @@ const AdminLeaveManagement = () => {
                       <div className="mb-4">
                         <label className="form-label text-muted fw-bold">CURRENT BALANCE</label>
                         <div className="d-flex align-items-center">
-                          <span className="display-3 fw-bold me-3">{editBalanceModal.sick_leave}</span>
+                          <span className={`display-3 fw-bold me-3 ${editBalanceModal.sick_leave === 0 ? 'text-danger' : ''}`}>
+                            {editBalanceModal.sick_leave}
+                          </span>
                           <span className="text-muted fs-4"> days</span>
                         </div>
                         <div className="progress mt-3" style={{ height: '10px' }}>
                           <div 
-                            className={`progress-bar ${editBalanceModal.sick_leave > 5 ? 'bg-primary' : (editBalanceModal.sick_leave < 2 ? 'bg-danger' : 'bg-info')}`} 
+                            className={`progress-bar ${editBalanceModal.sick_leave === 0 ? 'bg-danger' : (editBalanceModal.sick_leave > 5 ? 'bg-primary' : (editBalanceModal.sick_leave < 2 ? 'bg-warning' : 'bg-success'))}`} 
                             style={{ width: `${Math.min((editBalanceModal.sick_leave) * 100, 100)}%` }}
                           ></div>
                         </div>
+                        {editBalanceModal.sick_leave === 0 && (
+                          <div className="mt-2 text-danger">
+                            <i className="bi bi-exclamation-triangle-fill me-1"></i>
+                            No remaining balance!
+                          </div>
+                        )}
                         {editBalanceModal.sick_leave > 5 && (
                           <div className="mt-2 text-primary">
                             <i className="bi bi-exclamation-circle me-1"></i>
@@ -968,7 +1090,7 @@ const AdminLeaveManagement = () => {
                         <div className="input-group">
                           <input 
                             type="number" 
-                            className="form-control form-control-lg text-center fw-bold"
+                            className={`form-control form-control-lg text-center fw-bold ${editBalanceModal.new_sick === 0 ? 'text-danger' : ''}`}
                             value={editBalanceModal.new_sick}
                             onChange={(e) => setEditBalanceModal({
                               ...editBalanceModal, 
@@ -1004,15 +1126,23 @@ const AdminLeaveManagement = () => {
                       <div className="mb-4">
                         <label className="form-label text-muted fw-bold">CURRENT BALANCE</label>
                         <div className="d-flex align-items-center">
-                          <span className="display-3 fw-bold me-3">{editBalanceModal.emergency_leave}</span>
+                          <span className={`display-3 fw-bold me-3 ${editBalanceModal.emergency_leave === 0 ? 'text-danger' : ''}`}>
+                            {editBalanceModal.emergency_leave}
+                          </span>
                           <span className="text-muted fs-4">days</span>
                         </div>
                         <div className="progress mt-3" style={{ height: '10px' }}>
                           <div 
-                            className={`progress-bar ${editBalanceModal.emergency_leave > 5 ? 'bg-primary' : (editBalanceModal.emergency_leave < 2 ? 'bg-danger' : 'bg-danger')}`} 
+                            className={`progress-bar ${editBalanceModal.emergency_leave === 0 ? 'bg-danger' : (editBalanceModal.emergency_leave > 5 ? 'bg-primary' : (editBalanceModal.emergency_leave < 2 ? 'bg-warning' : 'bg-success'))}`} 
                             style={{ width: `${Math.min((editBalanceModal.emergency_leave) * 100, 100)}%` }}
                           ></div>
                         </div>
+                        {editBalanceModal.emergency_leave === 0 && (
+                          <div className="mt-2 text-danger">
+                            <i className="bi bi-exclamation-triangle-fill me-1"></i>
+                            No remaining balance!
+                          </div>
+                        )}
                         {editBalanceModal.emergency_leave > 5 && (
                           <div className="mt-2 text-primary">
                             <i className="bi bi-exclamation-circle me-1"></i>
@@ -1026,7 +1156,7 @@ const AdminLeaveManagement = () => {
                         <div className="input-group">
                           <input 
                             type="number" 
-                            className="form-control form-control-lg text-center fw-bold"
+                            className={`form-control form-control-lg text-center fw-bold ${editBalanceModal.new_emergency === 0 ? 'text-danger' : ''}`}
                             value={editBalanceModal.new_emergency}
                             onChange={(e) => setEditBalanceModal({
                               ...editBalanceModal, 
