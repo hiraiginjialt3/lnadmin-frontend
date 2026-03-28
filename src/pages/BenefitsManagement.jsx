@@ -157,35 +157,83 @@ const BenefitsManagement = () => {
   }, [getCurrentSunday, getCurrentSaturday]);
   
   // ============================================
-  // GET EMPLOYEE HOURLY RATE FROM PAYROLL
+  // GET EMPLOYEE HOURLY RATE (FIXED - Same as Adminsalary)
   // ============================================
   
-  const getEmployeeHourlyRate = useCallback((employeeId) => {
-    const rate = payrollRates.get(employeeId);
-    if (rate && rate > 0) return rate;
-    
-    const employee = employees.find(e => e.employee_id === employeeId);
-    if (employee) {
-      if (employee.hourly_rate) return employee.hourly_rate;
-      if (employee.hourlyRate) return employee.hourlyRate;
-      if (employee.rate) return employee.rate;
+  const getEmployeeHourlyRate = useCallback(async (employeeId) => {
+    // First check if we have it in payroll rates
+    const payrollRate = payrollRates.get(employeeId);
+    if (payrollRate && payrollRate > 0) {
+      return payrollRate;
     }
     
+    // If not, fetch from employee API directly (like Adminsalary does)
+    try {
+      const empResponse = await employeeAPI.getById(employeeId);
+      if (empResponse.data.success && empResponse.data.employee) {
+        const empDetail = empResponse.data.employee;
+        
+        // Check for hourly_rate in various formats
+        if (empDetail.hourly_rate !== undefined && empDetail.hourly_rate !== null) {
+          const rate = typeof empDetail.hourly_rate === 'string' 
+            ? parseFloat(empDetail.hourly_rate) 
+            : empDetail.hourly_rate;
+          if (rate > 0) return rate;
+        }
+        
+        if (empDetail.hourlyRate !== undefined && empDetail.hourlyRate !== null) {
+          const rate = typeof empDetail.hourlyRate === 'string' 
+            ? parseFloat(empDetail.hourlyRate) 
+            : empDetail.hourlyRate;
+          if (rate > 0) return rate;
+        }
+        
+        if (empDetail.rate !== undefined && empDetail.rate !== null) {
+          const rate = typeof empDetail.rate === 'string' 
+            ? parseFloat(empDetail.rate) 
+            : empDetail.rate;
+          if (rate > 0) return rate;
+        }
+        
+        // Try to calculate from monthly salary
+        if (empDetail.monthly_salary && empDetail.monthly_salary > 0) {
+          const hoursPerMonth = workDaysPerWeek * 4.33 * (companySettings?.standard_work_hours || 8);
+          return empDetail.monthly_salary / hoursPerMonth;
+        }
+      }
+    } catch (err) {
+      console.warn(`Could not fetch employee ${employeeId} details:`, err);
+    }
+    
+    // Try to find in employees list
+    const employee = employees.find(e => e.employee_id === employeeId);
+    if (employee) {
+      if (employee.hourly_rate && employee.hourly_rate > 0) {
+        return typeof employee.hourly_rate === 'string' ? parseFloat(employee.hourly_rate) : employee.hourly_rate;
+      }
+      if (employee.hourlyRate && employee.hourlyRate > 0) {
+        return typeof employee.hourlyRate === 'string' ? parseFloat(employee.hourlyRate) : employee.hourlyRate;
+      }
+      if (employee.rate && employee.rate > 0) {
+        return typeof employee.rate === 'string' ? parseFloat(employee.rate) : employee.rate;
+      }
+    }
+    
+    // Final fallback to company default
     return companySettings?.default_hourly_rate || 86.87;
-  }, [payrollRates, employees, companySettings]);
+  }, [payrollRates, employees, companySettings, workDaysPerWeek]);
   
   // ============================================
-  // FETCH EMPLOYEE WEEKLY SALARY
+  // FETCH EMPLOYEE WEEKLY SALARY (FIXED - Async)
   // ============================================
   
   const fetchEmployeeWeeklySalary = useCallback(async (employeeId) => {
     try {
-      const hourlyRate = getEmployeeHourlyRate(employeeId);
+      const hourlyRate = await getEmployeeHourlyRate(employeeId);
       
       if (hourlyRate > 0) {
         const hoursPerDay = companySettings?.standard_work_hours || 8;
         const weeklySalary = hourlyRate * hoursPerDay * workDaysPerWeek;
-        setEmployeeWeeklySalary(weeklySalary);
         return weeklySalary;
       }
       return 0;
@@ -232,24 +280,35 @@ const BenefitsManagement = () => {
     return 0;
   }, [getDOLEMonthlySalary]);
   
-  const calculatePhilHealthWeekly = useCallback((weeklySalary) => {
-    if (!weeklySalary || weeklySalary <= 0) return 0;
-    
-    const monthlySalary = getDOLEMonthlySalary(weeklySalary);
-    const monthlyShare = monthlySalary * 0.015;
-    
-    return Math.round((monthlyShare / 4) * 100) / 100;
-  }, [getDOLEMonthlySalary]);
+// CORRECT PHILHEALTH (Employee Share - 2.5%)
+const calculatePhilHealthWeekly = useCallback((weeklySalary) => {
+  if (!weeklySalary || weeklySalary <= 0) return 0;
   
-  const calculatePagIBIGWeekly = useCallback((weeklySalary) => {
-    if (!weeklySalary || weeklySalary <= 0) return 0;
-    
-    const monthlySalary = getDOLEMonthlySalary(weeklySalary);
-    let monthlyContribution = monthlySalary * 0.02;
-    monthlyContribution = Math.min(monthlyContribution, 100);
-    
-    return Math.round((monthlyContribution / 4) * 100) / 100;
-  }, [getDOLEMonthlySalary]);
+  const monthlySalary = getDOLEMonthlySalary(weeklySalary);
+  
+  // Apply salary floor and ceiling
+  const adjustedMonthlySalary = Math.min(Math.max(monthlySalary, 10000), 100000);
+  
+  // Employee share = 2.5% of monthly salary
+  const employeeMonthly = adjustedMonthlySalary * 0.025;
+  
+  // Convert to weekly
+  return Math.round((employeeMonthly / 4) * 100) / 100;
+}, [getDOLEMonthlySalary]);
+
+// CORRECT PAG-IBIG (Employee Share - 2% capped at ₱100)
+const calculatePagIBIGWeekly = useCallback((weeklySalary) => {
+  if (!weeklySalary || weeklySalary <= 0) return 0;
+  
+  const monthlySalary = getDOLEMonthlySalary(weeklySalary);
+  
+  // For salaries above ₱1,500: 2% capped at ₱100
+  let monthlyContribution = monthlySalary * 0.02;
+  monthlyContribution = Math.min(monthlyContribution, 100);
+  
+  // Convert to weekly
+  return Math.round((monthlyContribution / 4) * 100) / 100;
+}, [getDOLEMonthlySalary]);
   
   // ============================================
   // DEBOUNCED SEARCH
@@ -284,7 +343,28 @@ const BenefitsManagement = () => {
       if (signal?.aborted) return;
       
       if (empRes.data.success) {
-        setEmployees(empRes.data.employees || []);
+        const employeesData = empRes.data.employees || [];
+        
+        // For each employee, fetch their full details to get hourly_rate
+        const employeesWithRates = await Promise.all(
+          employeesData.map(async (emp) => {
+            try {
+              const empDetailResponse = await employeeAPI.getById(emp.employee_id);
+              if (empDetailResponse.data.success && empDetailResponse.data.employee) {
+                const empDetail = empDetailResponse.data.employee;
+                return {
+                  ...emp,
+                  hourly_rate: empDetail.hourly_rate || emp.hourly_rate || emp.hourlyRate || emp.rate || null
+                };
+              }
+            } catch (err) {
+              console.warn(`Could not fetch details for ${emp.employee_id}:`, err);
+            }
+            return emp;
+          })
+        );
+        
+        setEmployees(employeesWithRates);
       }
       if (benefitsRes.data.success) {
         setBenefits(benefitsRes.data.data || []);
@@ -374,7 +454,7 @@ const BenefitsManagement = () => {
   }, [formData]);
   
   // ============================================
-  // RECALCULATE BENEFITS
+  // RECALCULATE BENEFITS (FIXED - Async)
   // ============================================
   
   const recalculateBenefits = useCallback(async () => {
@@ -524,6 +604,26 @@ const BenefitsManagement = () => {
     
     setShowModal(true);
   }, [fetchEmployeeWeeklySalary, benefitsMap, calculateSSSWeekly, calculatePhilHealthWeekly, calculatePagIBIGWeekly, sssBrackets]);
+  
+  // ============================================
+  // GET EMPLOYEE HOURLY RATE FOR DISPLAY (Synchronous version for rendering)
+  // ============================================
+  
+  const getEmployeeHourlyRateDisplay = useCallback((employeeId) => {
+    const employee = employees.find(e => e.employee_id === employeeId);
+    if (employee) {
+      if (employee.hourly_rate && employee.hourly_rate > 0) {
+        return typeof employee.hourly_rate === 'string' ? parseFloat(employee.hourly_rate) : employee.hourly_rate;
+      }
+      if (employee.hourlyRate && employee.hourlyRate > 0) {
+        return typeof employee.hourlyRate === 'string' ? parseFloat(employee.hourlyRate) : employee.hourlyRate;
+      }
+      if (employee.rate && employee.rate > 0) {
+        return typeof employee.rate === 'string' ? parseFloat(employee.rate) : employee.rate;
+      }
+    }
+    return companySettings?.default_hourly_rate || 86.87;
+  }, [employees, companySettings]);
   
   // ============================================
   // BRACKET CRUD OPERATIONS
@@ -699,7 +799,6 @@ const BenefitsManagement = () => {
   }, [bracketForm, editingBracket, saving, resetBracketForm, bracketSettings]);
   
   const openBracketEditor = useCallback((bracket = null) => {
-    console.log('Opening bracket editor', bracket); // Debug log
     if (bracket) {
       setEditingBracket(bracket);
       setBracketForm({
@@ -973,7 +1072,7 @@ const BenefitsManagement = () => {
   const renderEmployeeRows = () => {
     return paginatedEmployees.map(emp => {
       const employeeBenefits = benefitsMap.get(emp.employee_id);
-      const hourlyRate = getEmployeeHourlyRate(emp.employee_id);
+      const hourlyRate = getEmployeeHourlyRateDisplay(emp.employee_id);
       
       let total = 0;
       if (employeeBenefits) {
@@ -993,23 +1092,23 @@ const BenefitsManagement = () => {
             <div style={{ fontSize: '11px', color: '#7f8c8d' }}>{emp.employee_id}</div>
             <div style={{ fontSize: '11px', color: '#999' }}>{emp.department || 'No Dept'}</div>
             <div style={{ fontSize: '10px', color: '#007bff', marginTop: '4px' }}>
-              ₱{hourlyRate.toFixed(2)}/hr (from payroll)
+              ₱{hourlyRate.toFixed(2)}/hr
             </div>
-          </td>
+           </td>
           <td style={{ padding: '12px', textAlign: 'center' }}>
             {employeeBenefits ? formatCurrency(employeeBenefits.sss_weekly) : '-'}
-          </td>
+           </td>
           <td style={{ padding: '12px', textAlign: 'center' }}>
             {employeeBenefits ? formatCurrency(employeeBenefits.philhealth_weekly) : '-'}
-          </td>
+           </td>
           <td style={{ padding: '12px', textAlign: 'center' }}>
             {employeeBenefits ? formatCurrency(employeeBenefits.pagibig_weekly) : '-'}
-          </td>
+           </td>
           <td style={{ padding: '12px', textAlign: 'center' }}>
             <span style={{ fontWeight: 'bold', color: '#28a745' }}>
               {employeeBenefits ? formatCurrency(total) : '-'}
             </span>
-          </td>
+           </td>
           <td style={{ padding: '12px', textAlign: 'center' }}>
             <button 
               style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
@@ -1017,8 +1116,8 @@ const BenefitsManagement = () => {
             >
               {employeeBenefits ? 'Edit' : 'Setup'}
             </button>
-          </td>
-        </tr>
+           </td>
+         </tr>
       );
     });
   };
@@ -1048,7 +1147,7 @@ const BenefitsManagement = () => {
                 MPF Base: ₱ {mpfBase.toFixed(2)}
               </div>
             )}
-          </td>
+           </td>
           <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#28a745' }}>
             ₱ {b.employee_contribution.toFixed(2)}
             {hasMPF && (
@@ -1057,7 +1156,7 @@ const BenefitsManagement = () => {
                 MPF: ₱ {employeeMPF.toFixed(2)}
               </div>
             )}
-          </td>
+           </td>
           <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#dc3545' }}>
             ₱ {b.employer_contribution.toFixed(2)}
             {hasMPF && (
@@ -1066,7 +1165,7 @@ const BenefitsManagement = () => {
                 MPF: ₱ {employerMPF.toFixed(2)}
               </div>
             )}
-          </td>
+           </td>
           <td style={{ padding: '12px', textAlign: 'center' }}>
             <div style={{ fontWeight: 'bold', color: '#fd7e14' }}>
               EC: ₱ {ecAmount.toFixed(2)}
@@ -1076,7 +1175,7 @@ const BenefitsManagement = () => {
                 MPF Total: ₱ {(employeeMPF + employerMPF).toFixed(2)}
               </div>
             )}
-          </td>
+           </td>
           <td style={{ padding: '12px', textAlign: 'center' }}>
             <span style={{ 
               background: b.is_active ? '#d4edda' : '#f8d7da', 
@@ -1087,7 +1186,7 @@ const BenefitsManagement = () => {
             }}>
               {b.is_active ? 'Active' : 'Inactive'}
             </span>
-          </td>
+           </td>
           <td style={{ padding: '12px', textAlign: 'center' }}>
             <button 
               style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: 4, marginRight: 8, cursor: 'pointer' }} 
@@ -1102,8 +1201,8 @@ const BenefitsManagement = () => {
             >
               {isDeleting ? '...' : 'Delete'}
             </button>
-          </td>
-        </tr>
+           </td>
+         </tr>
       );
     });
   };
@@ -1289,12 +1388,12 @@ const BenefitsManagement = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <i className="bi bi-calculator" style={{ marginRight: '8px', color: '#007bff' }}></i>
-            <strong>Hourly Rates Source:</strong> Payroll records for week {currentWeekRange.start} to {currentWeekRange.end}
+            <strong>Hourly Rates Source:</strong> Employee records and payroll for week {currentWeekRange.start} to {currentWeekRange.end}
             {loadingRates && <span className="ms-2 text-muted">(Loading rates...)</span>}
           </div>
           <div>
             <small className="text-muted">
-              {payrollRates.size} employee rates loaded
+              {payrollRates.size} employee rates from payroll
             </small>
           </div>
         </div>
@@ -1459,7 +1558,7 @@ const BenefitsManagement = () => {
                 <div><strong>ID:</strong> {selectedEmployee.employee_id}</div>
                 <div><strong>Department:</strong> {selectedEmployee.department || 'Not assigned'}</div>
                 <div><strong>Work Schedule:</strong> {workDaysPerWeek} days/week, {companySettings?.standard_work_hours || 8} hours/day</div>
-                <div><strong>Hourly Rate (from payroll):</strong> {formatCurrency(getEmployeeHourlyRate(selectedEmployee.employee_id))}/hr</div>
+                <div><strong>Hourly Rate:</strong> {formatCurrency(getEmployeeHourlyRateDisplay(selectedEmployee.employee_id))}/hr</div>
                 <div><strong>Weekly Salary:</strong> {employeeWeeklySalary > 0 ? formatCurrency(employeeWeeklySalary) : 'Not set'}</div>
                 <div><strong>Monthly Salary (DOLE):</strong> {employeeWeeklySalary > 0 ? formatCurrency(getDOLEMonthlySalary(employeeWeeklySalary)) : 'Not set'}</div>
                 {employeeWeeklySalary === 0 && (
@@ -1594,16 +1693,16 @@ const BenefitsManagement = () => {
                 <input type="number" name="min_salary_start" value={bracketSettings.min_salary_start} onChange={handleSettingsChange} style={input} />
               </div>
               <div>
-                <label>Max Salary End</label>
-                <input type="number" name="max_salary_end" value={bracketSettings.max_salary_end} onChange={handleSettingsChange} style={input} />
+                <label>MSC Start</label>
+                <input type="number" name="msc_start" value={bracketSettings.msc_start} onChange={handleSettingsChange} style={input} />
               </div>
               <div>
                 <label>Bracket Interval</label>
                 <input type="number" name="bracket_interval" value={bracketSettings.bracket_interval} onChange={handleSettingsChange} style={input} />
               </div>
               <div>
-                <label>MSC Start</label>
-                <input type="number" name="msc_start" value={bracketSettings.msc_start} onChange={handleSettingsChange} style={input} />
+                <label>MSC Maximum</label>
+                <input type="number" name="max_salary_end" value={bracketSettings.max_salary_end} onChange={handleSettingsChange} style={input} />
               </div>
               <div>
                 <label>MSC Increment</label>
