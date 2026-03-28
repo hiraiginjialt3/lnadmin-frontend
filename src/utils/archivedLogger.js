@@ -12,9 +12,22 @@ const ARCHIVED_CONFIG = {
 };
 
 // API Configuration
+// OLD (causes double /api)
 const API_URL = API_BASE_URL 
   ? `${API_BASE_URL}/api` 
   : 'http://localhost:5000/api';
+
+// NEW (prevents double /api)
+const API_URL = (() => {
+  if (!API_BASE_URL) {
+    return 'http://localhost:5000/api';
+  }
+  let base = API_BASE_URL.replace(/\/$/, '');
+  if (base.endsWith('/api')) {
+    return base;
+  }
+  return `${base}/api`;
+})();
 
 
 /**
