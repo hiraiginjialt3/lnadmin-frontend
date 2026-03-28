@@ -1,9 +1,6 @@
 import LZString from 'lz-string';
 import { API_BASE_URL } from '../config';
 
-import LZString from 'lz-string';
-import { API_BASE_URL } from '../config';
-
 const ARCHIVED_CONFIG = {
   STORAGE_KEYS: {
     ARCHIVED: 'archived_activities'
