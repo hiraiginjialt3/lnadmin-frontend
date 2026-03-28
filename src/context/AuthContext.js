@@ -137,7 +137,6 @@ export const AuthProvider = ({ children }) => {
       { path: '/admin/leaves', name: 'Leave Management', icon: 'bi-calendar-check-fill', roles: ['Admin', 'HR'] },
       { path: '/govinfo', name: 'Government Info', icon: 'bi-file-earmark-text', roles: ['Admin', 'HR', 'Accountant'] },
       { path: '/violations', name: 'Violations', icon: 'bi-exclamation-triangle', roles: ['Admin', 'HR'] },
-      { path: '/documents', name: 'Documents', icon: 'bi-folder', roles: ['Admin', 'HR', 'Accountant'] },
       { path: '/systemlogs', name: 'System Logs', icon: 'bi-folder', roles: ['Admin'] }
     ];
 

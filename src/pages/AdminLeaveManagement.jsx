@@ -451,17 +451,14 @@ const AdminLeaveManagement = () => {
       </ul>
 
       {/* Connection Status */}
-      <div className="alert alert-info mb-4">
-        <i className="bi bi-info-circle-fill me-2"></i>
-        Connected to server: {API.defaults.baseURL}
-        {activeTab === 'requests' && stats.total > 0 && (
-          <> | 
-            <strong className="ms-2">Pending: {stats.pending}</strong> | 
-            <strong className="ms-2">Approved: {stats.approved}</strong> | 
-            <strong className="ms-2">Denied: {stats.denied}</strong>
-          </>
-        )}
-      </div>
+      {activeTab === 'requests' && stats.total > 0 && (
+        <div className="alert alert-info mb-4">
+          <i className="bi bi-info-circle-fill me-2"></i>
+          <strong className="me-2">Pending: {stats.pending}</strong> | 
+          <strong className="me-2">Approved: {stats.approved}</strong> | 
+          <strong>Denied: {stats.denied}</strong>
+        </div>
+      )}
 
       {/* Error Alert */}
       {error && (

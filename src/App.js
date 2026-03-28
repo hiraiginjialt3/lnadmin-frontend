@@ -224,19 +224,6 @@ const Layout = () => {
               } 
             />
 
-            {/* Documents - All roles */}
-            <Route 
-              path="/documents" 
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.HR, ROLES.ACCOUNTANT, ROLES.EMPLOYEE]}>
-                  <div style={{ padding: '2rem' }}>
-                    <h2>Documents Management</h2>
-                    <p>This section is under development.</p>
-                  </div>
-                </ProtectedRoute>
-              } 
-            />
-
             {/* ===== Employee Pages===== */}
             <Route path="/employee/login" element={<EmployeeLogin />} />
 
