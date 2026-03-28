@@ -3,6 +3,7 @@ import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import API from "../services/api";
+
 const CompanyCalendar = () => {
   const [events, setEvents] = useState([]);
   const [holidays, setHolidays] = useState([]);
@@ -18,29 +19,53 @@ const CompanyCalendar = () => {
   const [newHoliday, setNewHoliday] = useState({ name: "", date: "", type: "regular", description: "" });
   const [newEvent, setNewEvent] = useState({ title: "", date: "", type: "company-event", description: "" });
   const [nightShiftBreak, setNightShiftBreak] = useState({ enabled: false, start: "00:00", end: "01:00", unpaid: true, duration: 60 });
+  
+  // ========== FLEXIBLE LATE DEDUCTION SETTINGS ==========
   const [lateDeductionSettings, setLateDeductionSettings] = useState({
-    late_deduction_enabled: true,
-    late_deduction_minutes: 30,
-    late_deduction_type: "time",
-    late_deduction_amount: 0,
-    late_deduction_percentage: 0,
-    late_deduction_multiple_occurrences: true,
-    late_deduction_cap: 4
+    enabled: true,
+    deduction_rule: "tiered", // "tiered", "flat", "percentage"
+    
+    // Morning shift configuration
+    morning: {
+      work_start: "08:00",
+      thresholds: [
+        { from_minutes: 0, to_minutes: 15, deduction_minutes: 0, description: "Grace period" },
+        { from_minutes: 15, to_minutes: 30, deduction_minutes: 30, description: "Minor late (30 min)" },
+        { from_minutes: 30, to_minutes: 999, deduction_minutes: 60, description: "Major late (1 hour)" }
+      ]
+    },
+    
+    // Night shift configuration
+    night: {
+      work_start: "22:00",
+      grace_minutes: 15,
+      thresholds: [
+        { from_minutes: 0, to_minutes: 15, deduction_minutes: 0, description: "Grace period" },
+        { from_minutes: 15, to_minutes: 30, deduction_minutes: 30, description: "Minor late (30 min)" },
+        { from_minutes: 30, to_minutes: 999, deduction_minutes: 60, description: "Major late (1 hour)" }
+      ]
+    },
+    
+    // Global settings
+    flat_deduction_minutes: 30,
+    flat_deduction_amount: 0,
+    deduction_percentage: 0,
+    multiple_occurrences: true,
+    weekly_cap: 4
   });
 
-  // Holiday pay settings - CORRECTED LOGIC
+  // Holiday pay settings
   const [holidayPaySettings, setHolidayPaySettings] = useState({
-    regular_holiday_paid: true,      // True = paid even if absent (8 hours regular rate)
-    regular_holiday_rate: 2.0,       // Premium rate if present
-    special_working_paid: true,       // True = paid if they work (regular rate)
+    regular_holiday_paid: true,
+    regular_holiday_rate: 2.0,
     special_working_rate: 1.0,
-    special_non_working_paid: false,  // False = no work, no pay (only paid if work)
-    special_non_working_rate: 1.3
+    special_non_working_rate: 1.3,
+    holiday_overtime_rate: 1.5
   });
 
   const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-  // Holiday type configurations with colors
+  // Holiday type configurations
   const holidayTypes = {
     regular: {
       name: "Regular Holiday",
@@ -54,14 +79,14 @@ const CompanyCalendar = () => {
       color: "#fd7e14",
       textColor: "#fff",
       icon: "🟠",
-      description: "Paid only if work (regular rate)"
+      description: "Treated as regular working day | Rate applies if work"
     },
     special_non_working: {
       name: "Special Non-Working Day",
       color: "#ffc107",
       textColor: "#000",
       icon: "🟡",
-      description: "Paid only if work (premium rate)"
+      description: "No work, no pay | Premium rate if work"
     }
   };
 
@@ -102,36 +127,24 @@ const CompanyCalendar = () => {
             textColor = "#000";
           }
           
-          // Check paid status based on settings
-          let isPaid = true;
           let rate = 1.0;
-          let paidDescription = "";
+          let rateDisplay = "";
           
           if (holiday.type === "regular") {
-            isPaid = holidayPaySettings.regular_holiday_paid;
             rate = holidayPaySettings.regular_holiday_rate;
-            if (isPaid) {
-              paidDescription = "Paid even if absent (8h regular)";
-            } else {
-              paidDescription = "Paid only if work";
-            }
+            rateDisplay = rate > 1 ? ` (${rate}x if present)` : "";
           } else if (holiday.type === "special_working") {
-            isPaid = holidayPaySettings.special_working_paid;
             rate = holidayPaySettings.special_working_rate;
-            paidDescription = isPaid ? "Paid if work" : "Unpaid work";
+            rateDisplay = rate > 1 ? ` (${rate}x)` : "";
           } else {
-            isPaid = holidayPaySettings.special_non_working_paid;
             rate = holidayPaySettings.special_non_working_rate;
-            paidDescription = isPaid ? "Paid if work (premium)" : "No work, no pay";
+            rateDisplay = rate > 1 ? ` (${rate}x if work)` : "";
           }
           
           const icon = typeConfig.icon;
-          const paidIndicator = isPaid ? "💰" : "💀";
+          const paidIndicator = holiday.type === "regular" ? "💰" : (holiday.type === "special_working" ? "🟠" : "🟡");
           
-          let title = `${icon} ${paidIndicator} ${holiday.name}`;
-          if (rate > 1) {
-            title += ` (${rate}x)`;
-          }
+          let title = `${icon} ${paidIndicator} ${holiday.name}${rateDisplay}`;
           
           return {
             id: holiday._id,
@@ -143,9 +156,8 @@ const CompanyCalendar = () => {
             extendedProps: { 
               type: "holiday", 
               holidayType: holiday.type,
-              isPaid: isPaid,
               rate: rate,
-              description: paidDescription
+              description: typeConfig.description
             }
           };
         });
@@ -215,9 +227,21 @@ const CompanyCalendar = () => {
     try {
       const response = await API.get("/attendance/settings");
       if (response.data.success) {
-        setSettings(response.data.settings);
-        if (response.data.settings.night_shift_break) {
-          setNightShiftBreak(response.data.settings.night_shift_break);
+        const settingsData = response.data.settings;
+        
+        const flattenedSettings = {
+          ...settingsData,
+          night_shift_break_enabled: settingsData.night_shift_break?.enabled || false,
+          night_shift_break_start: settingsData.night_shift_break?.start || "00:00",
+          night_shift_break_end: settingsData.night_shift_break?.end || "01:00",
+          night_shift_break_unpaid: settingsData.night_shift_break?.unpaid || true,
+          night_shift_break_duration: settingsData.night_shift_break?.duration || 60
+        };
+        
+        setSettings(flattenedSettings);
+        
+        if (settingsData.night_shift_break) {
+          setNightShiftBreak(settingsData.night_shift_break);
         }
       }
     } catch (error) {
@@ -228,11 +252,17 @@ const CompanyCalendar = () => {
   const fetchLateDeductionSettings = async () => {
     try {
       const response = await API.get("/attendance/late-deduction-settings");
-      if (response.data.success) {
-        setLateDeductionSettings(response.data.settings);
+      if (response.data.success && response.data.settings) {
+        // Merge with defaults to ensure all fields exist
+        setLateDeductionSettings(prev => ({
+          ...prev,
+          ...response.data.settings,
+          morning: { ...prev.morning, ...response.data.settings.morning },
+          night: { ...prev.night, ...response.data.settings.night }
+        }));
       }
     } catch (error) {
-      console.error("Failed to fetch late deduction settings:", error);
+      console.log("Using default late deduction settings");
     }
   };
 
@@ -245,10 +275,9 @@ const CompanyCalendar = () => {
         setHolidayPaySettings({
           regular_holiday_paid: settings.regular_holiday_paid ?? true,
           regular_holiday_rate: settings.regular_holiday_rate ?? 2.0,
-          special_working_paid: settings.special_working_paid ?? true,
           special_working_rate: settings.special_working_rate ?? 1.0,
-          special_non_working_paid: settings.special_non_working_paid ?? false,
-          special_non_working_rate: settings.special_non_working_rate ?? 1.3
+          special_non_working_rate: settings.special_non_working_rate ?? 1.3,
+          holiday_overtime_rate: settings.holiday_overtime_rate ?? 1.5
         });
       }
     } catch (error) {
@@ -260,6 +289,7 @@ const CompanyCalendar = () => {
     setLoading(true);
     try {
       const currentSettingsResponse = await API.get("/attendance/settings");
+      
       if (currentSettingsResponse.data.success) {
         const currentSettings = currentSettingsResponse.data.settings;
         
@@ -267,13 +297,13 @@ const CompanyCalendar = () => {
           ...currentSettings,
           regular_holiday_paid: holidayPaySettings.regular_holiday_paid,
           regular_holiday_rate: holidayPaySettings.regular_holiday_rate,
-          special_working_paid: holidayPaySettings.special_working_paid,
           special_working_rate: holidayPaySettings.special_working_rate,
-          special_non_working_paid: holidayPaySettings.special_non_working_paid,
-          special_non_working_rate: holidayPaySettings.special_non_working_rate
+          special_non_working_rate: holidayPaySettings.special_non_working_rate,
+          holiday_overtime_rate: holidayPaySettings.holiday_overtime_rate
         };
         
         const response = await API.post("/attendance/settings", updatedSettings);
+        
         if (response.data.success) {
           showMessage("success", "Holiday pay settings saved!");
           await fetchHolidayPaySettings();
@@ -296,6 +326,8 @@ const CompanyCalendar = () => {
       const response = await API.post("/attendance/late-deduction-settings", lateDeductionSettings);
       if (response.data.success) {
         showMessage("success", "Late deduction settings saved!");
+      } else {
+        showMessage("danger", "Error saving late deduction settings");
       }
     } catch (error) {
       showMessage("danger", "Error saving late deduction settings");
@@ -307,7 +339,19 @@ const CompanyCalendar = () => {
   const saveSettings = async () => {
     setLoading(true);
     try {
-      const updatedSettings = { ...settings, night_shift_break: nightShiftBreak };
+      const currentSettingsResponse = await API.get("/attendance/settings");
+      let currentSettings = {};
+      
+      if (currentSettingsResponse.data.success) {
+        currentSettings = currentSettingsResponse.data.settings;
+      }
+      
+      const updatedSettings = { 
+        ...currentSettings,
+        ...settings,
+        night_shift_break: nightShiftBreak
+      };
+      
       const response = await API.post("/attendance/settings", updatedSettings);
       if (response.data.success) {
         showMessage("success", "Settings saved successfully!");
@@ -336,8 +380,11 @@ const CompanyCalendar = () => {
         setNewHoliday({ name: "", date: "", type: "regular", description: "" });
         setActiveSection("calendar");
         showMessage("success", "Holiday added successfully!");
+      } else {
+        showMessage("danger", response.data.message || "Failed to add holiday");
       }
     } catch (error) {
+      console.error("Error saving holiday:", error);
       showMessage("danger", error.response?.data?.message || "Failed to add holiday");
     } finally {
       setLoading(false);
@@ -418,6 +465,66 @@ const CompanyCalendar = () => {
     }));
   };
 
+  const handleMorningThresholdChange = (index, field, value) => {
+    const newThresholds = [...lateDeductionSettings.morning.thresholds];
+    newThresholds[index][field] = parseFloat(value) || 0;
+    setLateDeductionSettings(prev => ({
+      ...prev,
+      morning: { ...prev.morning, thresholds: newThresholds }
+    }));
+  };
+
+  const addMorningThreshold = () => {
+    setLateDeductionSettings(prev => ({
+      ...prev,
+      morning: {
+        ...prev.morning,
+        thresholds: [
+          ...prev.morning.thresholds,
+          { from_minutes: 0, to_minutes: 0, deduction_minutes: 0, description: "New tier" }
+        ]
+      }
+    }));
+  };
+
+  const removeMorningThreshold = (index) => {
+    const newThresholds = lateDeductionSettings.morning.thresholds.filter((_, i) => i !== index);
+    setLateDeductionSettings(prev => ({
+      ...prev,
+      morning: { ...prev.morning, thresholds: newThresholds }
+    }));
+  };
+
+  const handleNightThresholdChange = (index, field, value) => {
+    const newThresholds = [...lateDeductionSettings.night.thresholds];
+    newThresholds[index][field] = parseFloat(value) || 0;
+    setLateDeductionSettings(prev => ({
+      ...prev,
+      night: { ...prev.night, thresholds: newThresholds }
+    }));
+  };
+
+  const addNightThreshold = () => {
+    setLateDeductionSettings(prev => ({
+      ...prev,
+      night: {
+        ...prev.night,
+        thresholds: [
+          ...prev.night.thresholds,
+          { from_minutes: 0, to_minutes: 0, deduction_minutes: 0, description: "New tier" }
+        ]
+      }
+    }));
+  };
+
+  const removeNightThreshold = (index) => {
+    const newThresholds = lateDeductionSettings.night.thresholds.filter((_, i) => i !== index);
+    setLateDeductionSettings(prev => ({
+      ...prev,
+      night: { ...prev.night, thresholds: newThresholds }
+    }));
+  };
+
   const handleWorkDayToggle = (day) => {
     setSettings(prev => ({
       ...prev,
@@ -431,6 +538,45 @@ const CompanyCalendar = () => {
     if (!rate || rate === 1) return "Regular";
     const percentage = (rate - 1) * 100;
     return `+${percentage.toFixed(0)}%`;
+  };
+
+  // Calculate deduction preview for a given hourly rate
+  const calculateDeductionPreview = (hourlyRate = 86.87) => {
+    if (lateDeductionSettings.deduction_rule === "tiered") {
+      // Morning shift preview
+      const morningPreview = lateDeductionSettings.morning.thresholds.map(t => {
+        let deductionAmount = 0;
+        if (t.deduction_minutes > 0) {
+          deductionAmount = (t.deduction_minutes / 60) * hourlyRate;
+        }
+        return {
+          ...t,
+          deduction_amount: deductionAmount,
+          amount_display: deductionAmount > 0 ? `₱${deductionAmount.toFixed(2)}` : "₱0.00"
+        };
+      });
+
+      // Night shift preview
+      const nightPreview = lateDeductionSettings.night.thresholds.map(t => {
+        let deductionAmount = 0;
+        if (t.deduction_minutes > 0) {
+          deductionAmount = (t.deduction_minutes / 60) * hourlyRate;
+        }
+        return {
+          ...t,
+          deduction_amount: deductionAmount,
+          amount_display: deductionAmount > 0 ? `₱${deductionAmount.toFixed(2)}` : "₱0.00"
+        };
+      });
+
+      return { morningPreview, nightPreview, rule: "tiered" };
+    } else if (lateDeductionSettings.deduction_rule === "flat") {
+      const flatAmount = (lateDeductionSettings.flat_deduction_minutes / 60) * hourlyRate;
+      return { flatAmount, rule: "flat" };
+    } else {
+      const percentageAmount = hourlyRate * (lateDeductionSettings.deduction_percentage / 100);
+      return { percentageAmount, rule: "percentage" };
+    }
   };
 
   useEffect(() => {
@@ -452,6 +598,8 @@ const CompanyCalendar = () => {
     { id: "late", label: "⏰ Late Deduction", color: "warning" },
     { id: "night", label: "🌙 Night Shift", color: "dark" }
   ];
+
+  const preview = calculateDeductionPreview();
 
   return (
     <div className="container-fluid py-4">
@@ -506,8 +654,8 @@ const CompanyCalendar = () => {
                 <div><strong className="text-success">{formatRateDisplay(settings.overtime_rate)}</strong></div>
               </div>
               <div className="col-md-2">
-                <small className="text-muted">Holiday Pay:</small>
-                <div><strong className="text-danger">{holidayPaySettings.regular_holiday_paid ? "Paid if absent" : "Unpaid if absent"}</strong></div>
+                <small className="text-muted">Sunday Rate:</small>
+                <div><strong className="text-info">{formatRateDisplay(settings.sunday_rate)}</strong></div>
               </div>
             </div>
           </div>
@@ -536,18 +684,11 @@ const CompanyCalendar = () => {
           <div className="card bg-light mb-3">
             <div className="card-body py-2">
               <div className="d-flex flex-wrap gap-3 justify-content-center align-items-center">
-                <span><span className="badge" style={{backgroundColor: "#dc3545", color: "white"}}>🔴</span> Regular Holiday</span>
-                <span><span className="badge" style={{backgroundColor: "#fd7e14", color: "white"}}>🟠</span> Special Working Day</span>
-                <span><span className="badge" style={{backgroundColor: "#ffc107", color: "#000"}}>🟡</span> Special Non-Working Day</span>
+                <span><span className="badge" style={{backgroundColor: "#dc3545", color: "white"}}>🔴</span> Regular Holiday (Paid if absent)</span>
+                <span><span className="badge" style={{backgroundColor: "#fd7e14", color: "white"}}>🟠</span> Special Working Day (Regular rate if work)</span>
+                <span><span className="badge" style={{backgroundColor: "#ffc107", color: "#000"}}>🟡</span> Special Non-Working Day (No work, no pay)</span>
                 <span><span className="badge bg-primary" style={{backgroundColor: "#0d6efd"}}>🔵</span> Company Event</span>
-                <span><span className="badge bg-success" style={{backgroundColor: "#198754"}}>🟢</span> Training</span>
-                <span><span className="badge" style={{backgroundColor: "#fd7e14", color: "white"}}>🟠</span> Meeting</span>
-                <span><span className="badge bg-danger" style={{backgroundColor: "#dc3545"}}>🔴</span> Deadline</span>
-                <span><span className="badge" style={{backgroundColor: "#ff69b4", color: "white"}}>💗</span> Birthday</span>
                 <span className="ms-auto">
-                  <small>💰 = Gets pay | 💀 = No pay</small>
-                </span>
-                <span>
                   <small>💡 Click date to add | Click event to delete</small>
                 </span>
               </div>
@@ -605,17 +746,13 @@ const CompanyCalendar = () => {
                 <div className="card-body" style={{maxHeight: "200px", overflowY: "auto"}}>
                   {holidays.map(holiday => {
                     const typeConfig = holidayTypes[holiday.type] || holidayTypes.regular;
-                    let isPaid = true;
                     let rate = 1.0;
                     
                     if (holiday.type === "regular") {
-                      isPaid = holidayPaySettings.regular_holiday_paid;
                       rate = holidayPaySettings.regular_holiday_rate;
                     } else if (holiday.type === "special_working") {
-                      isPaid = holidayPaySettings.special_working_paid;
                       rate = holidayPaySettings.special_working_rate;
                     } else {
-                      isPaid = holidayPaySettings.special_non_working_paid;
                       rate = holidayPaySettings.special_non_working_rate;
                     }
                     
@@ -625,9 +762,7 @@ const CompanyCalendar = () => {
                           <span style={{marginRight: "8px"}}>{typeConfig.icon}</span>
                           <strong>{holiday.name}</strong>
                           <small className="text-muted ms-2">{holiday.date}</small>
-                          <span className={`badge ms-2 ${isPaid ? 'bg-success' : 'bg-secondary'}`}>
-                            {isPaid ? `💰 ${rate > 1 ? rate + 'x' : 'Paid'}` : "💀 Unpaid"}
-                          </span>
+                          {rate > 1 && <span className="badge bg-info ms-2">{rate}x</span>}
                           <br />
                           <small className="text-muted">{typeConfig.description}</small>
                         </div>
@@ -681,12 +816,13 @@ const CompanyCalendar = () => {
               <strong>⚠️ Important:</strong> Configure how employees are paid for each holiday type.
               <ul className="mb-0 mt-2">
                 <li><strong>Regular Holiday:</strong> {holidayPaySettings.regular_holiday_paid ? "✅ Paid even if absent (8 hours regular rate)" : "❌ Unpaid if absent"} | Present: {holidayPaySettings.regular_holiday_rate}x for actual hours</li>
-                <li><strong>Special Working Day:</strong> {holidayPaySettings.special_working_paid ? "✅ Paid if work (regular rate)" : "❌ Unpaid work"}</li>
-                <li><strong>Special Non-Working Day:</strong> {holidayPaySettings.special_non_working_paid ? "✅ Paid if work (premium rate)" : "❌ No work, no pay"}</li>
+                <li><strong>Special Working Day:</strong> Treated as regular working day | Rate: {holidayPaySettings.special_working_rate}x</li>
+                <li><strong>Special Non-Working Day:</strong> No work, no pay | Rate if worked: {holidayPaySettings.special_non_working_rate}x</li>
+                <li><strong>Holiday Overtime:</strong> Overtime on holidays: hours × rate × {holidayPaySettings.holiday_overtime_rate}x</li>
               </ul>
             </div>
 
-            {/* Regular Holiday Settings */}
+            {/* Regular Holiday Settings - WITH CHECKBOX */}
             <div className="card mb-4 border-danger">
               <div className="card-header bg-danger text-white">
                 <h6 className="mb-0">🔴 Regular Holidays</h6>
@@ -712,7 +848,7 @@ const CompanyCalendar = () => {
                     <div className="input-group">
                       <input type="number" className="form-control" name="regular_holiday_rate"
                         value={holidayPaySettings.regular_holiday_rate} onChange={handleHolidayPayChange}
-                        step="0.01" min="1" />
+                        step="0.05" min="1" />
                       <span className="input-group-text">x</span>
                     </div>
                     <small>Multiplier for actual hours worked</small>
@@ -721,77 +857,72 @@ const CompanyCalendar = () => {
               </div>
             </div>
 
-            {/* Special Working Day Settings */}
+            {/* Special Working Day Settings - NO CHECKBOX, just rate */}
             <div className="card mb-4" style={{borderColor: "#fd7e14"}}>
               <div className="card-header" style={{backgroundColor: "#fd7e14", color: "white"}}>
                 <h6 className="mb-0">🟠 Special Working Days</h6>
               </div>
               <div className="card-body">
-                <div className="form-check form-switch mb-3">
-                  <input className="form-check-input" type="checkbox" name="special_working_paid"
-                    checked={holidayPaySettings.special_working_paid} onChange={handleHolidayPayChange}
-                    style={{ width: "3em", height: "1.5em" }} />
-                  <label className="form-check-label fw-bold ms-2">
-                    {holidayPaySettings.special_working_paid ? "✅ Paid (if work)" : "❌ Unpaid work"}
-                  </label>
-                  <div className="text-muted small mt-1">
-                    {holidayPaySettings.special_working_paid 
-                      ? "Employees get paid for working on special working days (regular rate)"
-                      : "Employees do NOT get paid for working on special working days"}
+                <div className="alert alert-light mb-3">
+                  <small>📅 <strong>Treated as regular working day</strong> - Employees get paid only if they work</small>
+                </div>
+                <div className="row">
+                  <div className="col-md-4">
+                    <label>Work Rate</label>
+                    <div className="input-group">
+                      <input type="number" className="form-control" name="special_working_rate"
+                        value={holidayPaySettings.special_working_rate} onChange={handleHolidayPayChange}
+                        step="0.05" min="1" />
+                      <span className="input-group-text">x</span>
+                    </div>
+                    <small>Rate multiplier for hours worked (default: 1.0x)</small>
                   </div>
                 </div>
-
-                {holidayPaySettings.special_working_paid && holidayPaySettings.special_working_rate > 1 && (
-                  <div className="row">
-                    <div className="col-md-4">
-                      <label>Special Rate (if applicable)</label>
-                      <div className="input-group">
-                        <input type="number" className="form-control" name="special_working_rate"
-                          value={holidayPaySettings.special_working_rate} onChange={handleHolidayPayChange}
-                          step="0.01" min="1" />
-                        <span className="input-group-text">x</span>
-                      </div>
-                      <small>Usually 1.0x (regular rate)</small>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Special Non-Working Day Settings */}
+            {/* Special Non-Working Day Settings - NO CHECKBOX, just rate */}
             <div className="card mb-4" style={{borderColor: "#ffc107"}}>
               <div className="card-header" style={{backgroundColor: "#ffc107", color: "#000"}}>
                 <h6 className="mb-0">🟡 Special Non-Working Days</h6>
               </div>
               <div className="card-body">
-                <div className="form-check form-switch mb-3">
-                  <input className="form-check-input" type="checkbox" name="special_non_working_paid"
-                    checked={holidayPaySettings.special_non_working_paid} onChange={handleHolidayPayChange}
-                    style={{ width: "3em", height: "1.5em" }} />
-                  <label className="form-check-label fw-bold ms-2">
-                    {holidayPaySettings.special_non_working_paid ? "✅ Paid (if worked)" : "❌ No work, no pay"}
-                  </label>
-                  <div className="text-muted small mt-1">
-                    {holidayPaySettings.special_non_working_paid 
-                      ? "Employees get paid IF they work on special non-working days (with premium rate)"
-                      : "Employees do NOT get paid (no work, no pay). They only get regular rate if forced to work"}
+                <div className="alert alert-light mb-3">
+                  <small>⚠️ <strong>No work, no pay</strong> - Employees only get paid if they work (premium rate)</small>
+                </div>
+                <div className="row">
+                  <div className="col-md-4">
+                    <label>Premium Rate (if worked)</label>
+                    <div className="input-group">
+                      <input type="number" className="form-control" name="special_non_working_rate"
+                        value={holidayPaySettings.special_non_working_rate} onChange={handleHolidayPayChange}
+                        step="0.05" min="1" />
+                      <span className="input-group-text">x</span>
+                    </div>
+                    <small>Multiplier for hours worked (default: 1.3x)</small>
                   </div>
                 </div>
+              </div>
+            </div>
 
-                {holidayPaySettings.special_non_working_paid && (
-                  <div className="row">
-                    <div className="col-md-4">
-                      <label>Premium Rate (if worked)</label>
-                      <div className="input-group">
-                        <input type="number" className="form-control" name="special_non_working_rate"
-                          value={holidayPaySettings.special_non_working_rate} onChange={handleHolidayPayChange}
-                          step="0.01" min="1" />
-                        <span className="input-group-text">x</span>
-                      </div>
-                      <small>Multiplier for actual hours worked</small>
+            {/* Holiday Overtime Rate */}
+            <div className="card mb-4" style={{borderColor: "#6c757d"}}>
+              <div className="card-header" style={{backgroundColor: "#6c757d", color: "white"}}>
+                <h6 className="mb-0">⏰ Holiday Overtime Rate</h6>
+              </div>
+              <div className="card-body">
+                <div className="row">
+                  <div className="col-md-4">
+                    <label>Overtime Rate on Holidays</label>
+                    <div className="input-group">
+                      <input type="number" className="form-control" name="holiday_overtime_rate"
+                        value={holidayPaySettings.holiday_overtime_rate} onChange={handleHolidayPayChange}
+                        step="0.05" min="1" />
+                      <span className="input-group-text">x</span>
                     </div>
+                    <small>Applies to OT on Regular Holidays and Special Non-Working Days (default: 1.5x)</small>
                   </div>
-                )}
+                </div>
               </div>
             </div>
 
@@ -800,21 +931,26 @@ const CompanyCalendar = () => {
               <div className="card-body">
                 <h6>📊 Current Pay Settings Summary</h6>
                 <div className="row mt-3">
-                  <div className="col-md-4">
+                  <div className="col-md-3">
                     <strong>🔴 Regular Holidays:</strong>
                     <div>{holidayPaySettings.regular_holiday_paid ? "✅ Paid even if absent" : "❌ Unpaid if absent"}</div>
                     <div>Present rate: {holidayPaySettings.regular_holiday_rate}x</div>
                     {holidayPaySettings.regular_holiday_paid && <div>Absent: 8 hours regular rate</div>}
                   </div>
-                  <div className="col-md-4">
+                  <div className="col-md-3">
                     <strong>🟠 Special Working Days:</strong>
-                    <div>{holidayPaySettings.special_working_paid ? "✅ Paid if work" : "❌ Unpaid work"}</div>
                     <div>Rate: {holidayPaySettings.special_working_rate}x</div>
+                    <div>Paid only if work</div>
                   </div>
-                  <div className="col-md-4">
+                  <div className="col-md-3">
                     <strong>🟡 Special Non-Working Days:</strong>
-                    <div>{holidayPaySettings.special_non_working_paid ? "✅ Paid if work" : "❌ No work, no pay"}</div>
                     <div>Rate if worked: {holidayPaySettings.special_non_working_rate}x</div>
+                    <div>No work, no pay</div>
+                  </div>
+                  <div className="col-md-3">
+                    <strong>⏰ Holiday Overtime:</strong>
+                    <div>Rate: {holidayPaySettings.holiday_overtime_rate}x</div>
+                    <small>Applies to OT on holidays</small>
                   </div>
                 </div>
               </div>
@@ -850,14 +986,14 @@ const CompanyCalendar = () => {
               <div className="col-md-3 mb-3">
                 <label>Holiday Type</label>
                 <select className="form-select" value={newHoliday.type} onChange={(e) => setNewHoliday({...newHoliday, type: e.target.value})}>
-                  <option value="regular">🔴 Regular Holiday</option>
-                  <option value="special_working">🟠 Special Working Day</option>
-                  <option value="special_non_working">🟡 Special Non-Working Day</option>
+                  <option value="regular">🔴 Regular Holiday (Paid if absent)</option>
+                  <option value="special_working">🟠 Special Working Day (Paid if work)</option>
+                  <option value="special_non_working">🟡 Special Non-Working Day (No work, no pay)</option>
                 </select>
                 <small className="text-muted">
                   {newHoliday.type === "regular" && "Paid even if absent (8h regular) | Present: premium rate"}
                   {newHoliday.type === "special_working" && "Paid only if work (regular rate)"}
-                  {newHoliday.type === "special_non_working" && "Paid only if work (premium rate)"}
+                  {newHoliday.type === "special_non_working" && "No work, no pay | Premium rate if work"}
                 </small>
               </div>
               <div className="col-md-2 mb-3 d-flex align-items-end">
@@ -878,10 +1014,15 @@ const CompanyCalendar = () => {
             <div className="row">
               {holidays.map(holiday => {
                 const typeConfig = holidayTypes[holiday.type] || holidayTypes.regular;
-                let isPaid = true;
-                if (holiday.type === "regular") isPaid = holidayPaySettings.regular_holiday_paid;
-                else if (holiday.type === "special_working") isPaid = holidayPaySettings.special_working_paid;
-                else if (holiday.type === "special_non_working") isPaid = holidayPaySettings.special_non_working_paid;
+                let rate = 1.0;
+                
+                if (holiday.type === "regular") {
+                  rate = holidayPaySettings.regular_holiday_rate;
+                } else if (holiday.type === "special_working") {
+                  rate = holidayPaySettings.special_working_rate;
+                } else {
+                  rate = holidayPaySettings.special_non_working_rate;
+                }
                 
                 return (
                   <div key={holiday._id} className="col-md-6 mb-2">
@@ -890,11 +1031,9 @@ const CompanyCalendar = () => {
                         <span style={{marginRight: "8px"}}>{typeConfig.icon}</span>
                         <strong>{holiday.name}</strong>
                         <small className="text-muted ms-2">{holiday.date}</small>
+                        {rate > 1 && <span className="badge bg-info ms-2">{rate}x</span>}
                         <br />
                         <small className="text-muted">{typeConfig.description}</small>
-                        <span className={`badge ms-2 ${isPaid ? 'bg-success' : 'bg-secondary'}`}>
-                          {isPaid ? "💰 Paid" : "💀 Unpaid"}
-                        </span>
                       </div>
                       <button className="btn btn-sm btn-outline-danger" onClick={() => deleteHoliday(holiday._id)}>Delete</button>
                     </div>
@@ -1117,7 +1256,7 @@ const CompanyCalendar = () => {
                     <label>Overtime Rate</label>
                     <div className="input-group">
                       <input type="number" className="form-control" name="overtime_rate"
-                        value={settings.overtime_rate} onChange={handleNumberChange} step="0.01" min="1" />
+                        value={settings.overtime_rate} onChange={handleNumberChange} step="0.05" min="1" />
                       <span className="input-group-text">x</span>
                     </div>
                     <small>{formatRateDisplay(settings.overtime_rate)}</small>
@@ -1126,7 +1265,7 @@ const CompanyCalendar = () => {
                     <label>Sunday Rate</label>
                     <div className="input-group">
                       <input type="number" className="form-control" name="sunday_rate"
-                        value={settings.sunday_rate} onChange={handleNumberChange} step="0.01" min="1" />
+                        value={settings.sunday_rate} onChange={handleNumberChange} step="0.05" min="1" />
                       <span className="input-group-text">x</span>
                     </div>
                     <small>{formatRateDisplay(settings.sunday_rate)}</small>
@@ -1135,10 +1274,10 @@ const CompanyCalendar = () => {
                     <label>Night Differential</label>
                     <div className="input-group">
                       <input type="number" className="form-control" name="night_shift_differential"
-                        value={settings.night_shift_differential || 1.10} onChange={handleNumberChange} step="0.01" min="1" />
-                      <span className="input-group-text">x</span>
+                        value={settings.night_shift_differential || 0.10} onChange={handleNumberChange} step="0.01" min="0" />
+                      <span className="input-group-text">%</span>
                     </div>
-                    <small>{formatRateDisplay(settings.night_shift_differential || 1.10)}</small>
+                    <small>e.g., 0.10 = 10% extra</small>
                   </div>
                 </div>
               </div>
@@ -1153,97 +1292,295 @@ const CompanyCalendar = () => {
         </div>
       )}
 
-      {/* ==================== LATE DEDUCTION SECTION ==================== */}
+      {/* ==================== FLEXIBLE LATE DEDUCTION SECTION ==================== */}
       {activeSection === "late" && (
         <div className="card shadow-sm">
           <div className="card-header bg-warning">
-            <h5 className="mb-0">⏰ Late Deduction Settings</h5>
+            <h5 className="mb-0">⏰ Flexible Late Deduction Settings</h5>
           </div>
           <div className="card-body">
+            {/* Enable/Disable */}
             <div className="form-check form-switch mb-4">
-              <input className="form-check-input" type="checkbox" name="late_deduction_enabled"
-                checked={lateDeductionSettings.late_deduction_enabled} onChange={handleLateDeductionChange}
+              <input className="form-check-input" type="checkbox" name="enabled"
+                checked={lateDeductionSettings.enabled} onChange={handleLateDeductionChange}
                 style={{ width: "3em", height: "1.5em" }} />
               <label className="form-check-label fw-bold ms-2">
-                {lateDeductionSettings.late_deduction_enabled ? "✅ Enabled" : "❌ Disabled"}
+                {lateDeductionSettings.enabled ? "✅ Late Deduction Enabled" : "❌ Late Deduction Disabled"}
               </label>
             </div>
 
-            {lateDeductionSettings.late_deduction_enabled && (
+            {lateDeductionSettings.enabled && (
               <>
-                <div className="row">
-                  <div className="col-md-4 mb-3">
-                    <label>Deduction Minutes</label>
-                    <div className="input-group">
-                      <input type="number" className="form-control" name="late_deduction_minutes"
-                        value={lateDeductionSettings.late_deduction_minutes} onChange={handleLateDeductionChange} step="15" />
-                      <span className="input-group-text">minutes</span>
-                    </div>
-                    <small>≈ {(lateDeductionSettings.late_deduction_minutes / 60).toFixed(2)} hour(s)</small>
-                  </div>
-                  <div className="col-md-4 mb-3">
-                    <label>Weekly Cap</label>
-                    <div className="input-group">
-                      <input type="number" className="form-control" name="late_deduction_cap"
-                        value={lateDeductionSettings.late_deduction_cap} onChange={handleLateDeductionChange} />
-                      <span className="input-group-text">occurrences</span>
-                    </div>
-                  </div>
-                  <div className="col-md-4 mb-3">
-                    <label>Deduction Type</label>
-                    <select className="form-select" name="late_deduction_type" value={lateDeductionSettings.late_deduction_type} onChange={handleLateDeductionChange}>
-                      <option value="time">Time-based (minutes)</option>
-                      <option value="fixed">Fixed Amount (₱)</option>
-                      <option value="percentage">Percentage of Hourly Rate</option>
+                {/* Deduction Rule Selection */}
+                <div className="row mb-4">
+                  <div className="col-md-6">
+                    <label className="fw-bold">Deduction Rule</label>
+                    <select className="form-select" name="deduction_rule" value={lateDeductionSettings.deduction_rule} onChange={handleLateDeductionChange}>
+                      <option value="tiered">🎯 Tiered Deduction (Different tiers based on lateness)</option>
+                      <option value="flat">⚖️ Flat Deduction (Same deduction for all lates)</option>
+                      <option value="percentage">📊 Percentage of Hourly Rate</option>
                     </select>
                   </div>
                 </div>
 
-                {(lateDeductionSettings.late_deduction_type === "fixed") && (
-                  <div className="row">
-                    <div className="col-md-4 mb-3">
-                      <label>Fixed Amount</label>
-                      <div className="input-group">
-                        <span className="input-group-text">₱</span>
-                        <input type="number" className="form-control" name="late_deduction_amount"
-                          value={lateDeductionSettings.late_deduction_amount} onChange={handleLateDeductionChange} />
+                {/* TIERED DEDUCTION CONFIGURATION */}
+                {lateDeductionSettings.deduction_rule === "tiered" && (
+                  <>
+                    {/* Morning Shift Tiers */}
+                    <div className="card mb-4" style={{borderColor: "#ffc107"}}>
+                      <div className="card-header" style={{backgroundColor: "#ffc107", color: "#000"}}>
+                        <h6 className="mb-0">🌅 Morning Shift Tiers</h6>
+                        <small>Work start: {lateDeductionSettings.morning.work_start}</small>
+                      </div>
+                      <div className="card-body">
+                        <div className="table-responsive">
+                          <table className="table table-sm">
+                            <thead>
+                              <tr>
+                                <th>From (min)</th>
+                                <th>To (min)</th>
+                                <th>Deduction (min)</th>
+                                <th>Description</th>
+                                <th>Preview (₱86.87/h)</th>
+                                <th></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {lateDeductionSettings.morning.thresholds.map((tier, idx) => (
+                                <tr key={idx}>
+                                  <td>
+                                    <input type="number" className="form-control form-control-sm" 
+                                      value={tier.from_minutes} style={{width: "80px"}}
+                                      onChange={(e) => handleMorningThresholdChange(idx, 'from_minutes', e.target.value)} />
+                                  </td>
+                                  <td>
+                                    <input type="number" className="form-control form-control-sm" 
+                                      value={tier.to_minutes} style={{width: "80px"}}
+                                      onChange={(e) => handleMorningThresholdChange(idx, 'to_minutes', e.target.value)} />
+                                  </td>
+                                  <td>
+                                    <input type="number" className="form-control form-control-sm" 
+                                      value={tier.deduction_minutes} style={{width: "80px"}}
+                                      onChange={(e) => handleMorningThresholdChange(idx, 'deduction_minutes', e.target.value)} />
+                                  </td>
+                                  <td>
+                                    <input type="text" className="form-control form-control-sm" 
+                                      value={tier.description} style={{width: "150px"}}
+                                      onChange={(e) => handleMorningThresholdChange(idx, 'description', e.target.value)} />
+                                  </td>
+                                  <td>
+                                    <strong>
+                                      {tier.deduction_minutes > 0 
+                                        ? `₱${((tier.deduction_minutes / 60) * 86.87).toFixed(2)}`
+                                        : "₱0.00"}
+                                    </strong>
+                                  </td>
+                                  <td>
+                                    {idx > 0 && (
+                                      <button className="btn btn-sm btn-outline-danger" onClick={() => removeMorningThreshold(idx)}>×</button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <button className="btn btn-sm btn-outline-warning mt-2" onClick={addMorningThreshold}>
+                          + Add Morning Tier
+                        </button>
+                        <div className="alert alert-info mt-3 small">
+                          <strong>How it works:</strong> If employee clocks in at {lateDeductionSettings.morning.work_start} + X minutes:
+                          <ul className="mb-0 mt-1">
+                            {lateDeductionSettings.morning.thresholds.map((tier, idx) => (
+                              <li key={idx}>
+                                {tier.from_minutes} - {tier.to_minutes === 999 ? "above" : tier.to_minutes} min late: 
+                                <strong> {tier.description}</strong> ({tier.deduction_minutes} min deduction)
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Night Shift Tiers */}
+                    <div className="card mb-4" style={{borderColor: "#6c757d"}}>
+                      <div className="card-header bg-dark text-white">
+                        <h6 className="mb-0">🌙 Night Shift Tiers</h6>
+                        <small>Work start: {lateDeductionSettings.night.work_start} | Grace: {lateDeductionSettings.night.grace_minutes} min</small>
+                      </div>
+                      <div className="card-body">
+                        <div className="table-responsive">
+                          <table className="table table-sm">
+                            <thead>
+                              <tr>
+                                <th>From (min)</th>
+                                <th>To (min)</th>
+                                <th>Deduction (min)</th>
+                                <th>Description</th>
+                                <th>Preview (₱86.87/h)</th>
+                                <th></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {lateDeductionSettings.night.thresholds.map((tier, idx) => (
+                                <tr key={idx}>
+                                  <td>
+                                    <input type="number" className="form-control form-control-sm" 
+                                      value={tier.from_minutes} style={{width: "80px"}}
+                                      onChange={(e) => handleNightThresholdChange(idx, 'from_minutes', e.target.value)} />
+                                  </td>
+                                  <td>
+                                    <input type="number" className="form-control form-control-sm" 
+                                      value={tier.to_minutes} style={{width: "80px"}}
+                                      onChange={(e) => handleNightThresholdChange(idx, 'to_minutes', e.target.value)} />
+                                  </td>
+                                  <td>
+                                    <input type="number" className="form-control form-control-sm" 
+                                      value={tier.deduction_minutes} style={{width: "80px"}}
+                                      onChange={(e) => handleNightThresholdChange(idx, 'deduction_minutes', e.target.value)} />
+                                  </td>
+                                  <td>
+                                    <input type="text" className="form-control form-control-sm" 
+                                      value={tier.description} style={{width: "150px"}}
+                                      onChange={(e) => handleNightThresholdChange(idx, 'description', e.target.value)} />
+                                  </td>
+                                  <td>
+                                    <strong>
+                                      {tier.deduction_minutes > 0 
+                                        ? `₱${((tier.deduction_minutes / 60) * 86.87).toFixed(2)}`
+                                        : "₱0.00"}
+                                    </strong>
+                                  </td>
+                                  <td>
+                                    {idx > 0 && (
+                                      <button className="btn btn-sm btn-outline-danger" onClick={() => removeNightThreshold(idx)}>×</button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <button className="btn btn-sm btn-outline-dark mt-2" onClick={addNightThreshold}>
+                          + Add Night Tier
+                        </button>
+                        <div className="alert alert-info mt-3 small">
+                          <strong>Night shift logic:</strong> Clock-in after {lateDeductionSettings.night.work_start} is considered late.
+                          <ul className="mb-0 mt-1">
+                            {lateDeductionSettings.night.thresholds.map((tier, idx) => (
+                              <li key={idx}>
+                                {tier.from_minutes} - {tier.to_minutes === 999 ? "above" : tier.to_minutes} min late: 
+                                <strong> {tier.description}</strong> ({tier.deduction_minutes} min deduction)
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* FLAT DEDUCTION CONFIGURATION */}
+                {lateDeductionSettings.deduction_rule === "flat" && (
+                  <div className="card mb-4">
+                    <div className="card-body">
+                      <div className="row">
+                        <div className="col-md-6">
+                          <label>Flat Deduction Minutes</label>
+                          <div className="input-group">
+                            <input type="number" className="form-control" name="flat_deduction_minutes"
+                              value={lateDeductionSettings.flat_deduction_minutes} onChange={handleLateDeductionChange} />
+                            <span className="input-group-text">minutes</span>
+                          </div>
+                          <small>≈ {(lateDeductionSettings.flat_deduction_minutes / 60).toFixed(2)} hour(s) deduction</small>
+                        </div>
+                        <div className="col-md-6">
+                          <label>Preview (₱86.87/h)</label>
+                          <div className="alert alert-info">
+                            ₱{((lateDeductionSettings.flat_deduction_minutes / 60) * 86.87).toFixed(2)} per occurrence
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {(lateDeductionSettings.late_deduction_type === "percentage") && (
-                  <div className="row">
-                    <div className="col-md-4 mb-3">
-                      <label>Percentage</label>
-                      <div className="input-group">
-                        <input type="number" className="form-control" name="late_deduction_percentage"
-                          value={lateDeductionSettings.late_deduction_percentage} onChange={handleLateDeductionChange} />
-                        <span className="input-group-text">%</span>
+                {/* PERCENTAGE DEDUCTION CONFIGURATION */}
+                {lateDeductionSettings.deduction_rule === "percentage" && (
+                  <div className="card mb-4">
+                    <div className="card-body">
+                      <div className="row">
+                        <div className="col-md-6">
+                          <label>Percentage of Hourly Rate</label>
+                          <div className="input-group">
+                            <input type="number" className="form-control" name="deduction_percentage"
+                              value={lateDeductionSettings.deduction_percentage} onChange={handleLateDeductionChange} />
+                            <span className="input-group-text">%</span>
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <label>Preview (₱86.87/h)</label>
+                          <div className="alert alert-info">
+                            ₱{((lateDeductionSettings.deduction_percentage / 100) * 86.87).toFixed(2)} per occurrence
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
                 )}
 
-                <div className="form-check mb-4">
-                  <input className="form-check-input" type="checkbox" name="late_deduction_multiple_occurrences"
-                    checked={lateDeductionSettings.late_deduction_multiple_occurrences} onChange={handleLateDeductionChange} />
-                  <label>Deduct for each late occurrence</label>
+                {/* Global Settings */}
+                <div className="row mt-4">
+                  <div className="col-md-6">
+                    <div className="form-check">
+                      <input className="form-check-input" type="checkbox" name="multiple_occurrences"
+                        checked={lateDeductionSettings.multiple_occurrences} onChange={handleLateDeductionChange} />
+                      <label className="form-check-label">Deduct for each late occurrence</label>
+                    </div>
+                    <small className="text-muted">If unchecked, only deduct once per week regardless of multiple lates</small>
+                  </div>
+                  <div className="col-md-6">
+                    <label>Weekly Cap</label>
+                    <div className="input-group">
+                      <input type="number" className="form-control" name="weekly_cap"
+                        value={lateDeductionSettings.weekly_cap} onChange={handleLateDeductionChange} />
+                      <span className="input-group-text">occurrences</span>
+                    </div>
+                    <small>Maximum number of lates to deduct per week (0 = no cap)</small>
+                  </div>
                 </div>
 
-                <div className="card bg-light">
+                {/* Summary Card */}
+                <div className="card bg-light mt-4">
                   <div className="card-body">
-                    <h6>Preview (based on ₱86.87/hour)</h6>
-                    <div className="row">
-                      <div className="col-md-6">
-                        <strong>Per occurrence:</strong>{" "}
-                        {lateDeductionSettings.late_deduction_type === "time" && `₱${((lateDeductionSettings.late_deduction_minutes / 60) * 86.87).toFixed(2)}`}
-                        {lateDeductionSettings.late_deduction_type === "fixed" && `₱${lateDeductionSettings.late_deduction_amount.toFixed(2)}`}
-                        {lateDeductionSettings.late_deduction_type === "percentage" && `₱${((lateDeductionSettings.late_deduction_percentage / 100) * 86.87).toFixed(2)}`}
-                      </div>
-                      <div className="col-md-6">
-                        <strong>Weekly max:</strong> {lateDeductionSettings.late_deduction_cap === 0 ? "No limit" : `${lateDeductionSettings.late_deduction_cap} occurrence(s)`}
-                      </div>
+                    <h6>📊 Current Deduction Summary (based on ₱86.87/hour)</h6>
+                    {lateDeductionSettings.deduction_rule === "tiered" && (
+                      <>
+                        <div className="row mt-2">
+                          <div className="col-md-6">
+                            <strong>Morning Shift:</strong>
+                            {preview.morningPreview.map((tier, idx) => (
+                              <div key={idx}>• {tier.description}: {tier.amount_display}</div>
+                            ))}
+                          </div>
+                          <div className="col-md-6">
+                            <strong>Night Shift:</strong>
+                            {preview.nightPreview.map((tier, idx) => (
+                              <div key={idx}>• {tier.description}: {tier.amount_display}</div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                    {lateDeductionSettings.deduction_rule === "flat" && (
+                      <div>• Flat deduction: ₱{(preview.flatAmount).toFixed(2)} per occurrence</div>
+                    )}
+                    {lateDeductionSettings.deduction_rule === "percentage" && (
+                      <div>• Percentage deduction: ₱{preview.percentageAmount.toFixed(2)} per occurrence</div>
+                    )}
+                    <div className="mt-2">
+                      <strong>Global Settings:</strong> {lateDeductionSettings.multiple_occurrences ? "Multiple occurrences" : "Single occurrence per week"} | 
+                      Cap: {lateDeductionSettings.weekly_cap === 0 ? "No cap" : `${lateDeductionSettings.weekly_cap} occurrence(s)`}
                     </div>
                   </div>
                 </div>
@@ -1267,8 +1604,13 @@ const CompanyCalendar = () => {
           </div>
           <div className="card-body">
             <div className="form-check mb-4">
-              <input className="form-check-input" type="checkbox" name="night_shift_enabled"
-                checked={settings.night_shift_enabled} onChange={handleSettingChange} />
+              <input 
+                className="form-check-input" 
+                type="checkbox" 
+                name="night_shift_enabled"
+                checked={settings.night_shift_enabled} 
+                onChange={handleSettingChange} 
+              />
               <label className="form-check-label fw-bold">Enable Night Shift</label>
             </div>
 
@@ -1277,22 +1619,37 @@ const CompanyCalendar = () => {
                 <div className="row">
                   <div className="col-md-6 mb-3">
                     <label>Night Shift Start</label>
-                    <input type="time" className="form-control" name="night_shift_start"
-                      value={settings.night_shift_start || "22:00"} onChange={handleSettingChange} />
+                    <input 
+                      type="time" 
+                      className="form-control" 
+                      name="night_shift_start"
+                      value={settings.night_shift_start || "22:00"} 
+                      onChange={handleSettingChange} 
+                    />
                   </div>
                   <div className="col-md-6 mb-3">
                     <label>Night Shift End</label>
-                    <input type="time" className="form-control" name="night_shift_end"
-                      value={settings.night_shift_end || "06:00"} onChange={handleSettingChange} />
+                    <input 
+                      type="time" 
+                      className="form-control" 
+                      name="night_shift_end"
+                      value={settings.night_shift_end || "06:00"} 
+                      onChange={handleSettingChange} 
+                    />
                   </div>
                 </div>
 
+                {/* Night Shift Break Section */}
                 <div className="card bg-light mt-3">
                   <div className="card-body">
                     <h6>🍽️ Night Shift Break</h6>
                     <div className="form-check mb-3">
-                      <input className="form-check-input" type="checkbox" name="enabled"
-                        checked={nightShiftBreak.enabled} onChange={(e) => setNightShiftBreak({...nightShiftBreak, enabled: e.target.checked})} />
+                      <input 
+                        className="form-check-input" 
+                        type="checkbox" 
+                        checked={nightShiftBreak.enabled} 
+                        onChange={(e) => setNightShiftBreak({...nightShiftBreak, enabled: e.target.checked})}
+                      />
                       <label>Enable Break for Night Shift</label>
                     </div>
 
@@ -1300,23 +1657,41 @@ const CompanyCalendar = () => {
                       <div className="row">
                         <div className="col-md-4 mb-3">
                           <label>Break Start</label>
-                          <input type="time" className="form-control" name="start"
-                            value={nightShiftBreak.start} onChange={(e) => setNightShiftBreak({...nightShiftBreak, start: e.target.value})} />
+                          <input 
+                            type="time" 
+                            className="form-control" 
+                            value={nightShiftBreak.start} 
+                            onChange={(e) => setNightShiftBreak({...nightShiftBreak, start: e.target.value})}
+                          />
                         </div>
                         <div className="col-md-4 mb-3">
                           <label>Break End</label>
-                          <input type="time" className="form-control" name="end"
-                            value={nightShiftBreak.end} onChange={(e) => setNightShiftBreak({...nightShiftBreak, end: e.target.value})} />
+                          <input 
+                            type="time" 
+                            className="form-control" 
+                            value={nightShiftBreak.end} 
+                            onChange={(e) => setNightShiftBreak({...nightShiftBreak, end: e.target.value})}
+                          />
                         </div>
                         <div className="col-md-4 mb-3">
                           <label>Duration</label>
-                          <input type="number" className="form-control" value={nightShiftBreak.duration} disabled readOnly />
+                          <input 
+                            type="number" 
+                            className="form-control" 
+                            value={nightShiftBreak.duration} 
+                            disabled 
+                            readOnly 
+                          />
                           <small>minutes</small>
                         </div>
                         <div className="col-12">
                           <div className="form-check">
-                            <input className="form-check-input" type="checkbox" name="unpaid"
-                              checked={nightShiftBreak.unpaid} onChange={(e) => setNightShiftBreak({...nightShiftBreak, unpaid: e.target.checked})} />
+                            <input 
+                              className="form-check-input" 
+                              type="checkbox" 
+                              checked={nightShiftBreak.unpaid} 
+                              onChange={(e) => setNightShiftBreak({...nightShiftBreak, unpaid: e.target.checked})}
+                            />
                             <label>Unpaid Break</label>
                           </div>
                         </div>
