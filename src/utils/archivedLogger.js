@@ -11,24 +11,26 @@ const ARCHIVED_CONFIG = {
   }
 };
 
-// API Configuration – FIXED (handles both cases)
 const API_URL = (() => {
   if (!API_BASE_URL) {
+    console.log('[ArchivedLogger] No API_BASE_URL, using localhost');
     return 'http://localhost:5000/api';
   }
   
-  let base = API_BASE_URL.trim().replace(/\/+$/, '');
+  // Remove trailing slash if present
+  let base = API_BASE_URL.replace(/\/$/, '');
   
-  // If it already ends with /api, use it as-is
+  // Check if it already ends with /api
   if (base.endsWith('/api')) {
+    console.log('[ArchivedLogger] Using API_BASE_URL as-is:', base);
     return base;
   }
   
-  // Otherwise, add /api
-  return `${base}/api`;
+  // Otherwise add /api
+  const result = `${base}/api`;
+  console.log('[ArchivedLogger] API_URL constructed:', result);
+  return result;
 })();
-
-console.log('[ArchivedLogger] ✅ API_URL resolved to:', API_URL);
 
 /**
  * Get auth token from localStorage
