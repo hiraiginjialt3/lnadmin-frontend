@@ -403,13 +403,6 @@ const Dashboard = () => {
                   />
                 )}
                 
-                {/* Documents - All roles */}
-                <ModuleCard
-                  to="/documents"
-                  icon="folder"
-                  title="Documents"
-                  description="Payslips and official files"
-                />
                 
                 {/* System Logs - Admin only */}
                 {isAdmin && (
