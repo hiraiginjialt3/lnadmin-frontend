@@ -21,6 +21,9 @@ const Attendance = () => {
     try {
       setLoading(true);
       
+      // Log the date we're filtering for debugging
+      console.log(`[DEBUG] Fetching attendance for date: ${filterDate}`);
+      
       // Fetch today's stats and all attendance data in parallel
       const [todayRes, allRes] = await Promise.all([
         getTodayMongoDBAttendance(),
@@ -32,13 +35,23 @@ const Attendance = () => {
       }
 
       if (allRes.data.success) {
-        setAttendanceData(allRes.data.data || []);
+        const records = allRes.data.data || [];
+        console.log(`[DEBUG] Received ${records.length} records for date ${filterDate}`);
+        
+        // Log the first few records for debugging
+        if (records.length > 0) {
+          console.log('[DEBUG] Sample records:', records.slice(0, 3));
+        }
+        
+        setAttendanceData(records);
       } else {
         console.error("Failed to fetch attendance data:", allRes.data.error);
+        setAttendanceData([]);
       }
 
     } catch (error) {
       console.error("Error fetching attendance data:", error);
+      setAttendanceData([]);
     } finally {
       setLoading(false);
     }
@@ -71,9 +84,14 @@ const Attendance = () => {
     fetchAutoClockOutStatus();
     fetchAttendanceSettings();
     
-    const interval = setInterval(fetchAutoClockOutStatus, 60000);
+    // Refresh every 5 minutes
+    const interval = setInterval(() => {
+      fetchAttendanceData();
+      fetchAutoClockOutStatus();
+    }, 300000);
+    
     return () => clearInterval(interval);
-  }, [filterDate]);
+  }, [filterDate]); // Re-run when filterDate changes
 
   const filteredData = attendanceData.filter(record =>
     record.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -85,18 +103,32 @@ const Attendance = () => {
   const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      weekday: 'short', 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric' 
-    });
+  const formatDateDisplay = (dateString) => {
+    if (!dateString) return 'N/A';
+    
+    try {
+      // If date is already formatted as "Fri, Mar 27, 2026", return as is
+      if (dateString.includes(',')) {
+        return dateString;
+      }
+      
+      // Otherwise parse YYYY-MM-DD
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { 
+        weekday: 'short', 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric' 
+      });
+    } catch (e) {
+      return dateString;
+    }
   };
 
   const handleDateChange = (e) => {
-    setFilterDate(e.target.value);
+    const newDate = e.target.value;
+    console.log(`[DEBUG] Date filter changed to: ${newDate}`);
+    setFilterDate(newDate);
     setCurrentPage(1);
   };
 
@@ -157,7 +189,6 @@ const Attendance = () => {
           </div>
           <div className="card-body">
             <div className="row">
-              {/* Column 1: Forgot to Clock Out */}
               <div className="col-md-3 mb-3 mb-md-0 d-flex">
                 <div className="text-center p-2 w-100 d-flex flex-column justify-content-center align-items-center">
                   <i className="bi bi-person-clock fs-4 text-warning"></i>
@@ -166,7 +197,6 @@ const Attendance = () => {
                 </div>
               </div>
               
-              {/* Column 2: Clock Out Start Time */}
               <div className="col-md-3 mb-3 mb-md-0 d-flex">
                 <div className="text-center p-2 w-100 d-flex flex-column justify-content-center align-items-center">
                   <i className="bi bi-clock fs-4 text-primary"></i>
@@ -175,7 +205,6 @@ const Attendance = () => {
                 </div>
               </div>
               
-              {/* Column 3: Auto Clock-Out Time */}
               <div className="col-md-3 mb-3 mb-md-0 d-flex">
                 <div className="text-center p-2 w-100 d-flex flex-column justify-content-center align-items-center">
                   <i className="bi bi-hourglass-split fs-4 text-info"></i>
@@ -184,7 +213,6 @@ const Attendance = () => {
                 </div>
               </div>
               
-              {/* Column 4: Current Time */}
               <div className="col-md-3 mb-3 mb-md-0 d-flex">
                 <div className="text-center p-2 w-100 d-flex flex-column justify-content-center align-items-center">
                   <i className="bi bi-clock-history fs-4 text-secondary"></i>
@@ -194,7 +222,6 @@ const Attendance = () => {
               </div>
             </div>
             
-            {/* Employees who forgot to clock out - only show if past clock_out_start */}
             {employeesWhoForgot.length > 0 && (
               <div className="mt-3">
                 <small className="text-muted d-block mb-2">
@@ -213,19 +240,6 @@ const Attendance = () => {
                     </span>
                   )}
                 </div>
-                <small className="text-muted d-block mt-2">
-                  <i className="bi bi-info-circle me-1"></i>
-                  These employees will be auto clocked-out at {autoClockOutStatus.auto_clock_out_time || '22:00'}
-                </small>
-              </div>
-            )}
-            
-            {employeesWhoForgot.length === 0 && autoClockOutStatus.open_records_count > 0 && (
-              <div className="mt-3">
-                <small className="text-muted d-block">
-                  <i className="bi bi-info-circle me-1"></i>
-                  {autoClockOutStatus.open_records_count} employee(s) haven't clocked out yet, but it's before {attendanceSettings.clock_out_start || '17:00'}
-                </small>
               </div>
             )}
           </div>
@@ -290,6 +304,9 @@ const Attendance = () => {
                 value={filterDate}
                 onChange={handleDateChange}
               />
+              <small className="text-muted">
+                Showing records for: {formatDateDisplay(filterDate)}
+              </small>
             </div>
             <div className="col-md-6">
               <label className="form-label">Search Employee</label>
@@ -326,7 +343,7 @@ const Attendance = () => {
             <i className="bi bi-list-check me-2"></i>
             Attendance Records
             <small className="ms-2 text-muted">
-              Showing {filteredData.length} records
+              Showing {filteredData.length} records for {formatDateDisplay(filterDate)}
             </small>
           </span>
           <button 
@@ -351,54 +368,67 @@ const Attendance = () => {
             <i className="bi bi-calendar-x fs-1 text-muted mb-3"></i>
             <h5>No attendance records found</h5>
             <p className="text-muted">
-              {searchTerm ? 'Try a different search term' : `No records for ${formatDate(filterDate)}`}
+              {searchTerm ? 'Try a different search term' : `No records for ${formatDateDisplay(filterDate)}`}
             </p>
           </div>
         ) : (
           <>
-            <div className="card-body">
+            <div className="card-body p-0">
               <div className="table-responsive">
-                <table className="table table-hover table-sm">
-                  <thead>
+                <table className="table table-hover table-sm mb-0">
+                  <thead className="table-light">
                     <tr>
-                      <th>#</th>
+                      <th style={{ width: '50px' }}>#</th>
                       <th>Employee</th>
-                      <th>Date</th>
-                      <th>Clock In</th>
-                      <th>Clock Out</th>
-                      <th>Status</th>
-                      <th>Duration</th>
-                      <th>Sync Status</th>
-                      <th>Auto Clock-Out</th>
+                      <th style={{ width: '140px' }}>Date</th>
+                      <th style={{ width: '100px' }}>Clock In</th>
+                      <th style={{ width: '120px' }}>Clock Out</th>
+                      <th style={{ width: '100px' }}>Status</th>
+                      <th style={{ width: '80px' }}>Duration</th>
+                      <th style={{ width: '100px' }}>Sync Status</th>
+                      <th style={{ width: '80px' }}>Auto</th>
                     </tr>
                   </thead>
                   <tbody>
                     {currentItems.map((record, index) => {
                       // Calculate duration
                       let duration = "N/A";
-                      if (record.clock_in_time && record.clock_out_time) {
-                        const inTime = new Date(`${record.date}T${record.clock_in_time}`);
-                        const outTime = new Date(`${record.date}T${record.clock_out_time}`);
-                        const diffMs = outTime - inTime;
-                        const hours = Math.floor(diffMs / (1000 * 60 * 60));
-                        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-                        duration = `${hours}h ${minutes}m`;
+                      if (record.clock_in_time && record.clock_out_time && record.clock_out_time !== 'Still In') {
+                        try {
+                          const inTime = new Date(`${record.date}T${record.clock_in_time}`);
+                          const outTime = new Date(`${record.date}T${record.clock_out_time}`);
+                          const diffMs = outTime - inTime;
+                          if (diffMs > 0) {
+                            const hours = Math.floor(diffMs / (1000 * 60 * 60));
+                            const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                            duration = `${hours}h ${minutes}m`;
+                          } else {
+                            duration = "Invalid";
+                          }
+                        } catch (e) {
+                          duration = "N/A";
+                        }
                       }
 
+                      const isStillIn = !record.clock_out_time || record.clock_out_time === '' || record.clock_out_time === 'Still In';
+                      
                       return (
                         <tr key={record._id || index}>
-                          <td>{indexOfFirstItem + index + 1}</td>
+                          <td className="text-muted">{indexOfFirstItem + index + 1}</td>
                           <td>
                             <div className="d-flex align-items-center">
                               <i className="bi bi-person-circle me-2 text-muted"></i>
                               <div>
-                                <div className="fw-semibold">{record.name}</div>
+                                <div className="fw-semibold">{record.name || 'Unknown'}</div>
+                                {record.employee_id && (
+                                  <small className="text-muted">{record.employee_id}</small>
+                                )}
                               </div>
                             </div>
                           </td>
                           <td>
                             <span className="badge bg-secondary">
-                              {formatDate(record.date)}
+                              {formatDateDisplay(record.date)}
                             </span>
                           </td>
                           <td>
@@ -407,7 +437,7 @@ const Attendance = () => {
                             </span>
                           </td>
                           <td>
-                            {record.clock_out_time ? (
+                            {!isStillIn ? (
                               <span className={`badge ${record.auto_clocked_out ? 'bg-info' : 'bg-danger'}`}>
                                 {record.clock_out_time}
                                 {record.auto_clocked_out && (
@@ -419,14 +449,14 @@ const Attendance = () => {
                             )}
                           </td>
                           <td>
-                            {record.clock_out_time ? (
+                            {!isStillIn ? (
                               <span className="badge bg-success">Completed</span>
                             ) : (
                               <span className="badge bg-warning">Working</span>
                             )}
                           </td>
                           <td>
-                            <small>{duration}</small>
+                            <small className="text-muted">{duration}</small>
                           </td>
                           <td>
                             <span className={`badge ${
@@ -454,7 +484,7 @@ const Attendance = () => {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="card-footer">
+              <div className="card-footer bg-white">
                 <nav aria-label="Attendance pagination">
                   <ul className="pagination justify-content-center mb-0">
                     <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
@@ -467,25 +497,19 @@ const Attendance = () => {
                       </button>
                     </li>
                     
-                    {Array.from({ length: totalPages }, (_, i) => i + 1)
-                      .filter(page => 
-                        page === 1 || 
-                        page === totalPages || 
-                        (page >= currentPage - 2 && page <= currentPage + 2)
-                      )
-                      .map((page, index, array) => {
-                        if (index > 0 && page - array[index - 1] > 1) {
-                          return [
-                            <li key={`ellipsis-${page}`} className="page-item disabled">
-                              <span className="page-link">...</span>
-                            </li>,
-                            <li key={page} className={`page-item ${currentPage === page ? 'active' : ''}`}>
-                              <button className="page-link" onClick={() => setCurrentPage(page)}>
-                                {page}
-                              </button>
-                            </li>
-                          ];
-                        }
+                    {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                      let page;
+                      if (totalPages <= 7) {
+                        page = i + 1;
+                      } else if (currentPage <= 4) {
+                        page = i + 1;
+                      } else if (currentPage >= totalPages - 3) {
+                        page = totalPages - 6 + i;
+                      } else {
+                        page = currentPage - 3 + i;
+                      }
+                      
+                      if (page > 0 && page <= totalPages) {
                         return (
                           <li key={page} className={`page-item ${currentPage === page ? 'active' : ''}`}>
                             <button className="page-link" onClick={() => setCurrentPage(page)}>
@@ -493,7 +517,9 @@ const Attendance = () => {
                             </button>
                           </li>
                         );
-                      })}
+                      }
+                      return null;
+                    })}
                     
                     <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
                       <button
@@ -519,32 +545,5 @@ const Attendance = () => {
     </div>
   );
 };
-
-const styles = `
-  .table th {
-    font-weight: 600;
-    background-color: #f8f9fa;
-    border-bottom: 2px solid #dee2e6;
-  }
-  
-  .table tbody tr:hover {
-    background-color: #f5f5f5;
-  }
-  
-  .badge {
-    font-weight: 500;
-    padding: 0.35em 0.65em;
-  }
-  
-  .page-item.active .page-link {
-    background-color: #0d6efd;
-    border-color: #0d6efd;
-  }
-`;
-
-// Add styles to the document
-const styleSheet = document.createElement("style");
-styleSheet.innerText = styles;
-document.head.appendChild(styleSheet);
 
 export default Attendance;

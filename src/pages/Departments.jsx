@@ -17,7 +17,7 @@ const Departments = () => {
     });
 
     // Predefined department options
-    const departmentOptions = ['IT', 'HR', 'Accounting', 'Sales', 'Marketing', 'Operations', 'Finance', 'Admin'];
+    const departmentOptions = ['IT', 'Accounting', 'Sales', 'Marketing', 'Operations', 'Finance'];
 
     // Fetch departments from API
     const fetchDepartments = async () => {
