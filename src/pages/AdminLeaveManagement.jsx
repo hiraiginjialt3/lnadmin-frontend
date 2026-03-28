@@ -427,15 +427,15 @@ const AdminLeaveManagement = () => {
             ) : (
               <div className="table-responsive">
                 <table className="table table-hover table-striped">
-                  <thead className="table-dark" style={{ color: '#000' }}>
+                  <thead className="table-dark">
                     <tr>
-                      <th style={{ color: '#000' }}>Employee</th>
-                      <th style={{ color: '#000' }}>Department</th>
-                      <th style={{ color: '#000' }}>Personal Leave</th>
-                      <th style={{ color: '#000' }}>Sick Leave</th>
-                      <th style={{ color: '#000' }}>Emergency Leave</th>
-                      <th style={{ color: '#000' }}>Total</th>
-                      <th style={{ color: '#000' }}>Actions</th>
+                      <th>Employee</th>
+                      <th>Department</th>
+                      <th>Personal Leave</th>
+                      <th>Sick Leave</th>
+                      <th>Emergency Leave</th>
+                      <th>Total</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
