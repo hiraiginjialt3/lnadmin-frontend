@@ -497,100 +497,117 @@ const AccountManagement = () => {
   };
 
   // Archive all inactive employees with password
-  const handleArchiveInactive = useCallback(async () => {
-    // Validate password
-    if (archivePassword.length < 6) {
-      setPasswordError("Password must be at least 6 characters long");
-      return;
+const handleArchiveInactive = useCallback(async () => {
+  // Validate password
+  if (archivePassword.length < 6) {
+    setPasswordError("Password must be at least 6 characters long");
+    return;
+  }
+  
+  if (archivePassword !== confirmPassword) {
+    setPasswordError("Passwords do not match");
+    return;
+  }
+  
+  setShowPasswordModal(false);
+  
+  if (!window.confirm(`⚠️ ARCHIVE ALL INACTIVE EMPLOYEES\n\nThis will:\n• Archive all inactive employees to a password-protected ZIP file\n• Remove their data from all databases\n• Download the archive file to your computer\n\nAre you sure you want to continue?`)) {
+    return;
+  }
+  
+  setArchiving(true);
+  setError("");
+  setSuccess("");
+  
+  // ✅ Get list of inactive employees before archiving for logging
+  const inactiveEmployees = employees.filter(e => e.status === 'inactive');
+  const inactiveNames = inactiveEmployees.map(e => `${e.name} (${e.employee_id})`).join(', ');
+  
+  try {
+    // Make the request with responseType: 'blob' to handle file download
+    const response = await API.post('/archive/inactive-employees', 
+      { password: archivePassword },
+      { responseType: 'blob' }
+    );
+    
+    // Create a blob from the response
+    const blob = new Blob([response.data], { 
+      type: 'application/zip' 
+    });
+    
+    // Create a download link
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // Get filename from Content-Disposition header or use default
+    let filename = 'employee_archive.zip';
+    const contentDisposition = response.headers['content-disposition'];
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      if (filenameMatch && filenameMatch[1]) {
+        filename = filenameMatch[1].replace(/['"]/g, '');
+      }
     }
     
-    if (archivePassword !== confirmPassword) {
-      setPasswordError("Passwords do not match");
-      return;
-    }
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
     
-    setShowPasswordModal(false);
-    
-    if (!window.confirm(`⚠️ ARCHIVE ALL INACTIVE EMPLOYEES\n\nThis will:\n• Archive all inactive employees to a password-protected ZIP file\n• Remove their data from all databases\n• Download the archive file to your computer\n\nAre you sure you want to continue?`)) {
-      return;
-    }
-    
-    setArchiving(true);
-    setError("");
-    setSuccess("");
-    
-    try {
-      // Make the request with responseType: 'blob' to handle file download
-      const response = await API.post('/archive/inactive-employees', 
-        { password: archivePassword },
-        { responseType: 'blob' }
+    // ✅ LOG THE ARCHIVE ACTION
+    if (inactiveNames) {
+      await logActivity(
+        'Archived Inactive Employees',
+        `Archived ${inactiveEmployees.length} inactive employee(s): ${inactiveNames}`
       );
-      
-      // Create a blob from the response
-      const blob = new Blob([response.data], { 
-        type: 'application/zip' 
-      });
-      
-      // Create a download link
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      
-      // Get filename from Content-Disposition header or use default
-      let filename = 'employee_archive.zip';
-      const contentDisposition = response.headers['content-disposition'];
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-        if (filenameMatch && filenameMatch[1]) {
-          filename = filenameMatch[1].replace(/['"]/g, '');
-        }
-      }
-      
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      
-      // Show success message
-      showAlert("success", `
-        <div class="text-start">
-          <h6 class="mb-3">✅ Archive Complete!</h6>
-          <p><strong>File downloaded:</strong> ${filename}</p>
-          <p><strong>Password:</strong> <code>${archivePassword}</code></p>
-          <p class="mb-0 text-success">The ZIP file has been saved to your Downloads folder.</p>
-          <hr class="my-2">
-          <p class="small text-muted mb-0">
-            <i class="bi bi-info-circle me-1"></i>
-            The archived employees have been removed from the system. They can only be restored from this file.
-          </p>
-        </div>
-      `, true);
-      
-      // Refresh the employee list
-      fetchEmployees();
-      
-    } catch (error) {
-      console.error("Archive error:", error);
-      
-      // Try to parse error response if it's JSON
-      if (error.response && error.response.data instanceof Blob) {
-        const text = await error.response.data.text();
-        try {
-          const errorData = JSON.parse(text);
-          setError(errorData.message || "Error archiving employees");
-        } catch {
-          setError("Error archiving employees");
-        }
-      } else {
-        setError(error.response?.data?.message || "Error archiving employees");
-      }
-    } finally {
-      setArchiving(false);
-      setArchivePassword("");
-      setConfirmPassword("");
+    } else {
+      await logActivity(
+        'Archived Inactive Employees',
+        `Archived ${inactiveEmployees.length} inactive employee(s)`
+      );
     }
-  }, [archivePassword, confirmPassword, fetchEmployees]);
+    
+    // Show success message
+    showAlert("success", `
+      <div class="text-start">
+        <h6 class="mb-3">✅ Archive Complete!</h6>
+        <p><strong>File downloaded:</strong> ${filename}</p>
+        <p><strong>Password:</strong> <code>${archivePassword}</code></p>
+        <p class="mb-0 text-success">The ZIP file has been saved to your Downloads folder.</p>
+        <hr class="my-2">
+        <p class="small text-muted mb-0">
+          <i class="bi bi-info-circle me-1"></i>
+          The archived employees have been removed from the system. They can only be restored from this file.
+        </p>
+      </div>
+    `, true);
+    
+    // Refresh the employee list
+    fetchEmployees();
+    
+  } catch (error) {
+    console.error("Archive error:", error);
+    
+    // Try to parse error response if it's JSON
+    if (error.response && error.response.data instanceof Blob) {
+      const text = await error.response.data.text();
+      try {
+        const errorData = JSON.parse(text);
+        setError(errorData.message || "Error archiving employees");
+      } catch {
+        setError("Error archiving employees");
+      }
+    } else {
+      setError(error.response?.data?.message || "Error archiving employees");
+    }
+  } finally {
+    setArchiving(false);
+    setArchivePassword("");
+    setConfirmPassword("");
+  }
+}, [archivePassword, confirmPassword, fetchEmployees, employees]);
 
   useEffect(() => {
     const initialize = async () => {
@@ -850,15 +867,16 @@ const AccountManagement = () => {
         if (data.success) {
           const employee = employees.find(emp => emp.employee_id === employeeId);
           
+          // ✅ LOG THE STATUS CHANGE
+          await logActivity(
+            `${newStatus === 'active' ? 'Activated' : 'Deactivated'} Employee Account`,
+            `${employee?.name || 'Unknown'} (${employeeId}) was ${newStatus === 'active' ? 'activated' : 'deactivated and queued for archive'}`
+          );
+          
           if (newStatus === "inactive") {
             await queueEmployeeForArchive(employeeId, employee?.name || 'Unknown');
             showAlert("info", `⚠️ ${employee?.name} has been queued for archiving. They will be archived when you click "Archive All Inactive".`);
           }
-          
-          await logActivity(
-            `${newStatus === 'active' ? 'Activated' : 'Deactivated'} Employee Account`,
-            `${employee?.name || 'Unknown'} (${employeeId}) is now ${newStatus}`
-          );
           
           showAlert("success", `Employee ${newStatus}d successfully!`);
           fetchEmployees();
