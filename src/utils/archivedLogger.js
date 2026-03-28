@@ -1,6 +1,14 @@
 import LZString from 'lz-string';
 import { API_BASE_URL } from '../config';
 
+import LZString from 'lz-string';
+import { API_BASE_URL } from '../config';
+
+// ===== PUT DEBUG HERE =====
+console.log('API_BASE_URL value:', API_BASE_URL);
+console.log('Type of API_BASE_URL:', typeof API_BASE_URL);
+// ===== END DEBUG =====
+
 const ARCHIVED_CONFIG = {
   STORAGE_KEYS: {
     ARCHIVED: 'archived_activities'
@@ -12,22 +20,21 @@ const ARCHIVED_CONFIG = {
 };
 
 // API Configuration
-// OLD (causes double /api)
-const API_URL = API_BASE_URL 
-  ? `${API_BASE_URL}/api` 
-  : 'http://localhost:5000/api';
-
-// NEW (prevents double /api)
 const API_URL = (() => {
   if (!API_BASE_URL) {
     return 'http://localhost:5000/api';
   }
+  
   let base = API_BASE_URL.replace(/\/$/, '');
+  
   if (base.endsWith('/api')) {
     return base;
   }
+  
   return `${base}/api`;
 })();
+
+console.log('FINAL API_URL:', API_URL);
 
 
 /**
